@@ -28,6 +28,12 @@ Database of fuel prices, focused on Central Europe.
 - Other countries haven't been straightforward
   - Switzerland ([see](https://www.comparis.ch/benzin-preise)) doesn't seem to have good data
   - Same for Czechia, Slovakia, Hungary, ...
+  
+## Reading the data
+
+- Data is scraped and stored more or less directly (as compressed JSON)
+- Usually, the JSON contains a geospatial point location – but directly reading as a proper GeoJSON doesn't work
+- A terrible attempt at collating files is in `read.R`
 
 ## Company data
 
@@ -63,4 +69,4 @@ Database of fuel prices, focused on Central Europe.
     - We can get that from `https://www.lm-energy.at/wp-json/wp/v2/page/tankstellennetz`
 - Avia
     - The prices are in `https://www.avia.at/tanken/tankstellenfinder-diesel-super-95-super-plus-98-biofrei-48638.html`
-- OMV, Avanti, and Diskont are slightly more involved, but work in the same way – see [info/omv_scraper.md]
+- OMV, Avanti, and Diskont are slightly more involved, but work in the same way – see [here](info/omv_scraper.md)
