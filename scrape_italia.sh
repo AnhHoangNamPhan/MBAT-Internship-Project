@@ -1,6 +1,6 @@
 #!/bin/bash
 
-cd /home/nikolas/repos/tankerkaiser/
+cd ~/Desktop/MBAT-Internship-Project/
 
 # Create timestamp in format YYYY-MM-DD_HH-MM-SS
 TIMESTAMP=$(date +%Y-%m-%d_%H-%M)

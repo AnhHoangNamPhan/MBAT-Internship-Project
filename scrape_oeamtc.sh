@@ -1,6 +1,6 @@
 #!/bin/bash
 
-cd /home/nikolas/repos/tankerkaiser/
+cd ~/Desktop/MBAT-Internship-Project/
 
 # Create timestamp in format YYYY-MM-DD_HH-MM-SS
 TIMESTAMP=$(date +%Y-%m-%d_%H-%M)
@@ -19,7 +19,7 @@ curl 'https://www.oeamtc.at/routenplaner/api/gis-fuel/fuel/search?count=10000&in
         "latitudeMin": 46.0,
         "latitudeMax": 49.5
       }
-    },
+    }or
     "fuels": {
       "fuels": {
         "values": ["DIESEL", "GASOLINE", "GASOLINE_SUPER"]
