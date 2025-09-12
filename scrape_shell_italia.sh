@@ -6,7 +6,7 @@ set -euo pipefail
 COUNTRY="${COUNTRY:-it}"
 LOCALE="${LOCALE:-it_IT}"
 OUT_DIR="${OUT_DIR:-data_shell_italia}"
-CACHE_DIR="${CACHE_DIR:-cache_shel_italial}"
+CACHE_DIR="${CACHE_DIR:-cache_shell_italia}"
 SLEEP_SECS="${SLEEP_SECS:-1}"
 BBOX_FILE="${BBOX_FILE:-}"  
 
