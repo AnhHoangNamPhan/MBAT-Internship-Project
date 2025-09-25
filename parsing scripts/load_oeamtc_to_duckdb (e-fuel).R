@@ -153,6 +153,74 @@ on.exit({
   if (DBI::dbIsValid(con)) DBI::dbDisconnect(con)
 }, add = TRUE)
 
+# ---------- Create Table with Unique Constraint ----------
+create_table_if_not_exists <- function(table_name) {
+  # Check connection validity first
+  if (!DBI::dbIsValid(con)) {
+    cat("🔄 Reconnecting to DuckDB...\n")
+    con <<- connect_duckdb()
+  }
+  
+  # Check if table exists
+  if (!DBI::dbExistsTable(con, table_name)) {
+    cat("📋 Creating table:", table_name, "\n")
+    
+    # Create table with proper schema
+    create_sql <- paste0("
+      CREATE TABLE ", table_name, " (
+        station_id VARCHAR,
+        station_name VARCHAR,
+        station_address VARCHAR,
+        station_brand VARCHAR,
+        station_operator VARCHAR,
+        station_phone VARCHAR,
+        station_website VARCHAR,
+        station_email VARCHAR,
+        station_facilities VARCHAR,
+        station_services VARCHAR,
+        station_opening_hours VARCHAR,
+        station_operation_modes VARCHAR,
+        station_payment_methods VARCHAR,
+        station_roaming_available BOOLEAN,
+        station_green_energy BOOLEAN,
+        station_free_parking BOOLEAN,
+        station_active BOOLEAN,
+        station_oeamtc_epower_station BOOLEAN,
+        total_charging_points INTEGER,
+        charging_point_ids VARCHAR,
+        max_capacity_kw REAL,
+        min_capacity_kw REAL,
+        avg_capacity_kw REAL,
+        cost_types VARCHAR,
+        payment_methods VARCHAR,
+        plug_types VARCHAR,
+        vehicle_types VARCHAR,
+        roaming_available BOOLEAN,
+        price_per_kwh REAL,
+        unit VARCHAR,
+        price_last_updated VARCHAR,
+        fuel_source VARCHAR,
+        manually_approved BOOLEAN,
+        last_imported VARCHAR,
+        last_imported_human VARCHAR,
+        entry_etag VARCHAR,
+        station_lat REAL,
+        station_lng REAL,
+        file_source VARCHAR,
+        PRIMARY KEY (station_id, file_source, last_imported)
+      )
+    ")
+    
+    DBI::dbExecute(con, create_sql)
+    cat("✅ Table created successfully\n")
+  } else {
+    cat("📋 Table", table_name, "already exists\n")
+  }
+}
+
+# Create table
+create_table_if_not_exists(table_name)
+
 # ---------- Find E-Fuel Files ----------
 efuel_files <- fs::dir_ls(json_dir, regexp = "(^|/)e-fuel_.*\\.json$")
 
@@ -284,7 +352,31 @@ for (file in efuel_files) {
       con <<- connect_duckdb()
     }
     
-    # Write data
+    # Check for duplicates before inserting
+    duplicate_count <- 0
+    for (i in 1:nrow(df)) {
+      # Check connection validity before each query
+      if (!DBI::dbIsValid(con)) {
+        cat("🔄 Reconnecting to DuckDB...\n")
+        con <<- connect_duckdb()
+      }
+      
+      row <- df[i, ]
+      check_sql <- paste0("
+        SELECT COUNT(*) as count FROM ", table_name, " 
+        WHERE station_id = ? AND file_source = ? AND last_imported = ?
+      ")
+      result <- DBI::dbGetQuery(con, check_sql, params = list(
+        row$station_id, row$file_source, row$last_imported
+      ))
+      if (result$count > 0) duplicate_count <- duplicate_count + 1
+    }
+    
+    if (duplicate_count > 0) {
+      cat("🔄 Found", duplicate_count, "existing rows, updating...\n")
+    }
+    
+    # Write data (DuckDB will handle duplicates with PRIMARY KEY constraint)
     DBI::dbWriteTable(con, table_name, df, append = TRUE)
     cat("✅ Written", nrow(df), "rows to", table_name, "\n")
     total_rows <- total_rows + nrow(df)

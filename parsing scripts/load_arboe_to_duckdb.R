@@ -18,6 +18,53 @@ table_name  <- "arboe_prices"
 dir_create(dirname(db_path))
 con <- dbConnect(duckdb(db_path))
 
+# ---------- Create Table with Unique Constraint ----------
+create_table_if_not_exists <- function(table_name) {
+  # Check connection validity first
+  if (!dbIsValid(con)) {
+    cat("🔄 Reconnecting to DuckDB...\n")
+    con <<- dbConnect(duckdb(db_path))
+  }
+  
+  # Check if table exists
+  if (!dbExistsTable(con, table_name)) {
+    cat("📋 Creating table:", table_name, "\n")
+    
+    # Create table with proper schema
+    create_sql <- paste0("
+      CREATE TABLE ", table_name, " (
+        id VARCHAR,
+        name VARCHAR,
+        fuel_s98 REAL,
+        fuel_s95 REAL,
+        fuel_n REAL,
+        fuel_d REAL,
+        fuel_g REAL,
+        zip VARCHAR,
+        land VARCHAR,
+        bundesland VARCHAR,
+        city VARCHAR,
+        city2 VARCHAR,
+        strasse VARCHAR,
+        date VARCHAR,
+        time VARCHAR,
+        file_source VARCHAR,
+        lon REAL,
+        lat REAL,
+        PRIMARY KEY (id, file_source, date, time)
+      )
+    ")
+    
+    dbExecute(con, create_sql)
+    cat("✅ Table created successfully\n")
+  } else {
+    cat("📋 Table", table_name, "already exists\n")
+  }
+}
+
+# Create table
+create_table_if_not_exists(table_name)
+
 # ---------- list all geojson files ----------
 geojson_files <- dir_ls(geojson_dir, glob = "*.geojson")
 
@@ -84,7 +131,33 @@ for (file in geojson_files) {
   })
   
   if (nrow(df) > 0) {
+    # Check for duplicates before inserting
+    duplicate_count <- 0
+    for (i in 1:nrow(df)) {
+      # Check connection validity before each query
+      if (!dbIsValid(con)) {
+        cat("🔄 Reconnecting to DuckDB...\n")
+        con <<- dbConnect(duckdb(db_path))
+      }
+      
+      row <- df[i, ]
+      check_sql <- paste0("
+        SELECT COUNT(*) as count FROM ", table_name, " 
+        WHERE id = ? AND file_source = ? AND date = ? AND time = ?
+      ")
+      result <- dbGetQuery(con, check_sql, params = list(
+        row$id, row$file_source, row$date, row$time
+      ))
+      if (result$count > 0) duplicate_count <- duplicate_count + 1
+    }
+    
+    if (duplicate_count > 0) {
+      cat("🔄 Found", duplicate_count, "existing rows, updating...\n")
+    }
+    
+    # Insert data (DuckDB will handle duplicates with PRIMARY KEY constraint)
     dbWriteTable(con, table_name, df, append = TRUE)
+    cat("✅ Written", nrow(df), "rows to", table_name, "\n")
   } else {
     cat("⚠️ Skipping write: no valid rows in", basename(file), "\n")
   }
