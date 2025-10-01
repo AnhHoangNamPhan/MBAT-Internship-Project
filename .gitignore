@@ -1,61 +1,38 @@
-# Data files (should not be in repository)
-data/
-data_*/
-cache/
-*.json
+# Scraped data files (PNG, JSON, compressed files)
 *.png
-*.csv
+*.json
 *.gz
+*.zip
+
+# Data folders
+data/
+data_alt/
+data_at_archive/
+data_bp_at/
+data_bp_italia/
+data_ita/
+data_jet_at/
+data_OMV_at/
+data_shell_at/
+data_shell_italia/
+data_slo/
+
+# Cache files
+cache/
+cache_bp_at/
+cache_bp_italia/
+cache_shell_at/
+cache_shell_italia/
+
+# Database files
 *.duckdb
+*.duckdb.wal
+
+# Log files
+*.log
 
 # System files
 .DS_Store
 .Rhistory
 .RData
-.Ruserdata
-Thumbs.db
-
-# IDE files
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# Log files
-*.log
-
-# Temporary files
-*.tmp
-*.temp
-
-# OS generated files
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
-
-# R specific
 .Rproj.user/
-.Rhistory
-.RData
-.Ruserdata
-*.Rproj
-
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-env/
-venv/
-ENV/
-
-# Node.js
-node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
