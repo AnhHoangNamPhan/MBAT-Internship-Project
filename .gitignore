@@ -16,6 +16,7 @@ data_OMV_at/
 data_shell_at/
 data_shell_italia/
 data_slo/
+tankerkoenig-data/
 
 # Cache files
 cache/
@@ -36,3 +37,7 @@ cache_shell_italia/
 .Rhistory
 .RData
 .Rproj.user/
+
+# IDE/Editor files
+.vscode/
+.idea/
