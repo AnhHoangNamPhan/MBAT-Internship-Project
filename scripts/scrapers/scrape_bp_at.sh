@@ -5,7 +5,7 @@ set -euo pipefail
 
 COUNTRY="at"
 LOCALE="de_AT"
-OUT_DIR="data_bp_at"
+OUT_DIR="scraped_data/data_bp_at"
 CACHE_DIR="cache_bp_at"
 SLEEP_SECS=1
 TIMESTAMP="$(date +%Y-%m-%d_%H-%M)"

@@ -6,7 +6,7 @@
   dir.create("cache", FALSE)
   dir.create("data", FALSE)
   
-  id <- format(Sys.time(), "%Y-%m-%d_%H:%M")
+  id <- format(Sys.time() - 86400, "%Y-%m-%d_%H:%M")
   link <- "https://www.arboe.at/leistungen/spritpreis-und-e-tankstellenfinder/spritpreise-oesterreich"
   
   # Read the page and acquire the scripts ---

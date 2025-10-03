@@ -12,8 +12,8 @@ library(dplyr)
 `%||%` <- function(a,b) if (is.null(a) || length(a)==0) b else a
 
 # ---------- configuration ----------
-station_list_csv <- "~/Desktop/MBAT-Internship-Project/data_OMV_at/stations_AUT.csv"
-out_dir          <- "~/Desktop/MBAT-Internship-Project/data_OMV_at"
+station_list_csv <- "~/Desktop/MBAT-Internship-Project/scraped_data/data_OMV_at/stations_AUT.csv"
+out_dir          <- "~/Desktop/MBAT-Internship-Project/scraped_data/data_OMV_at"
 csv_path         <- file.path(out_dir, "prices_AUT.csv")
 dir_create(path.expand(out_dir))
 
@@ -30,7 +30,7 @@ station_ids <- stations$station_id
 
 # ---------- loop through stations ----------
 for (station_id in station_ids) {
-  stamp     <- format(Sys.time(), "%Y-%m-%d_%H-%M-%S")
+  stamp     <- format(Sys.time() - 86400, "%Y-%m-%d_%H-%M-%S")
   resp_path <- file.path(out_dir, sprintf("response_%s_%s.json", station_id, stamp))
   png_path  <- file.path(out_dir, sprintf("prices_%s_%s.png", station_id, stamp))
   
@@ -104,7 +104,7 @@ for (station_id in station_ids) {
     raw_line      = eur_lines,
     ocr_text_path = png_path,
     response_path = resp_path,
-    scraped_at    = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
+    scraped_at    = format(Sys.time() - 86400, "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
   )
   
   # ---- save to CSV ----

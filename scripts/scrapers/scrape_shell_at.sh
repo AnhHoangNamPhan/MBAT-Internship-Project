@@ -7,7 +7,7 @@ set -euo pipefail
 ########################
 COUNTRY="${COUNTRY:-at}"        
 LOCALE="${LOCALE:-de_AT}"        
-OUT_DIR="${OUT_DIR:-data_shell_at}"
+OUT_DIR="${OUT_DIR:-scraped_data/data_shell_at}"
 CACHE_DIR="${CACHE_DIR:-cache_shell_at}"
 BBOX_FILE="${BBOX_FILE:-}"       
 SLEEP_SECS="${SLEEP_SECS:-1}"  

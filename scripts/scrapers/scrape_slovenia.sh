@@ -3,7 +3,7 @@
 cd ~/Desktop/MBAT-Internship-Project/
 
 # Create timestamp in format YYYY-MM-DD_HH-MM-SS
-TIMESTAMP=$(date +%Y-%m-%d_%H-%M)
+TIMESTAMP=$(date -v-1d +%Y-%m-%d_%H-%M)
 
 # Pages beyond 23 are probably empty, but it doens't hurt to check them
 for PAGE in {1..25}; do

@@ -13,9 +13,9 @@ library(stringr)
 library(fs)
 
 # ---------- Configuration ----------
-db_path <- '/Users/alexphan/Desktop/MBAT-Internship-Project/db/austrian_archive_fuel_data.duckdb'
+db_path <- '/Users/alexphan/Desktop/MBAT-Internship-Project/databases/austrian_archive_fuel_data.duckdb'
 table_name <- "austrian_archive_fuel"
-data_dir <- '/Users/alexphan/Desktop/MBAT-Internship-Project/data_at_archive'
+data_dir <- '/Users/alexphan/Desktop/MBAT-Internship-Project/scraped_data/data_at_archive'
 
 cat("==================================================\n")
 cat("🇦🇹 Austrian Archive Fuel Data Parser\n")

@@ -102,9 +102,9 @@ extract_services <- function(facilities) {
 }
 
 # ---------- Configuration ----------
-json_dir   <- "~/Desktop/MBAT-Internship-Project/data_alt"
-db_path    <- "~/Desktop/MBAT-Internship-Project/db/oeamtc_fuel_data_comprehensive.duckdb"
-table_name <- "oeamtc_fuel_comprehensive"
+json_dir   <- "~/Desktop/MBAT-Internship-Project/scraped_data/data_alt"
+db_path    <- "~/Desktop/MBAT-Internship-Project/databases/oeamtc_fuel_data.duckdb"
+table_name <- "oeamtc_fuel"
 
 # ---------- Database Connection ----------
 connect_duckdb <- function() {

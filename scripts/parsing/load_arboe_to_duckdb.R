@@ -11,7 +11,7 @@ library(purrr)
 
 # ---------- paths ----------
 geojson_dir <- "~/Desktop/MBAT-Internship-Project/data"
-db_path     <- "~/Desktop/MBAT-Internship-Project/db/arboe_fuel_prices.duckdb"
+db_path     <- "~/Desktop/MBAT-Internship-Project/databases/arboe_fuel_prices.duckdb"
 table_name  <- "arboe_prices"
 
 # ---------- setup ----------

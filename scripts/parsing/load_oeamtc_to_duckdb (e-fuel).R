@@ -139,9 +139,9 @@ extract_prices <- function(prices_list) {
 }
 
 # ---------- Configuration ----------
-json_dir   <- "~/Desktop/MBAT-Internship-Project/data_alt"
-db_path    <- "~/Desktop/MBAT-Internship-Project/db/oeamtc_efuel_data_comprehensive.duckdb"
-table_name <- "oeamtc_efuel_comprehensive"
+json_dir   <- "~/Desktop/MBAT-Internship-Project/scraped_data/data_alt"
+db_path    <- "~/Desktop/MBAT-Internship-Project/databases/oeamtc_efuel_data.duckdb"
+table_name <- "oeamtc_efuel"
 
 # ---------- Database Connection ----------
 connect_duckdb <- function() {

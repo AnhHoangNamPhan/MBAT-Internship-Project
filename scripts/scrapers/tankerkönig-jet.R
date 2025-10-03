@@ -56,7 +56,7 @@ station_details <- Filter(Negate(is.null), station_details)
 
 # ---------- 3. Save to JSON ----------
 if (length(station_details) > 0) {
-  today <- format(Sys.Date(), "%Y-%m-%d")
+  today <- format(Sys.Date() - 1, "%Y-%m-%d")
   file_name <- paste0("jet_prices_", today, ".json")
   write_json(station_details, file_name, pretty = TRUE, auto_unbox = TRUE)
   cat("✅ Saved to file:", file_name, "\n")

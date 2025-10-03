@@ -18,8 +18,8 @@ library(dplyr)
 library(fs)
 
 # ---------- Configuration ----------
-db_path <- '/Users/alexphan/Desktop/MBAT-Internship-Project/db/german_fuel_data.duckdb'
-data_dir <- '/Users/alexphan/Desktop/MBAT-Internship-Project/tankerkoenig-data'
+db_path <- '/Users/alexphan/Desktop/MBAT-Internship-Project/databases/german_fuel_data.duckdb'
+data_dir <- '/Users/alexphan/Desktop/MBAT-Internship-Project/scraped_data/tankerkoenig-data'
 stations_table <- "german_stations"
 prices_table <- "german_prices"
 

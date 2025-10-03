@@ -3,7 +3,7 @@
 cd ~/Desktop/MBAT-Internship-Project/
 
 # Create timestamp in format YYYY-MM-DD_HH-MM-SS
-TIMESTAMP=$(date +%Y-%m-%d_%H-%M)
+TIMESTAMP=$(date -v-1d +%Y-%m-%d_%H-%M)
 
 # for REGION in {1..20}; do
 #   curl "https://carburanti.mise.gov.it/ospzApi/registry/province?regionId=${REGION}" \
@@ -18,8 +18,8 @@ for REGION in {1..20}; do
     -H 'Content-Type: application/json' \
     -H 'Origin: https://carburanti.mise.gov.it' \
     --data-raw "{\"region\":${REGION}}" \
-    > "data_ita/fuel_region-${REGION}_${TIMESTAMP}.json"
-  gzip "data_ita/fuel_region-${REGION}_${TIMESTAMP}.json"
+    > "scraped_data/data_ita/fuel_region-${REGION}_${TIMESTAMP}.json"
+  gzip "scraped_data/data_ita/fuel_region-${REGION}_${TIMESTAMP}.json"
   sleep 1
 done
 

@@ -1,7 +1,7 @@
 #!/bin/bash
 
 base_url="https://archiv.spritvergleich.at"
-outdir="./data_at_archive/2025"
+outdir="./scraped_data/data_at_archive/2025"
 mkdir -p "$outdir"
 
 for month in {01..12}; do

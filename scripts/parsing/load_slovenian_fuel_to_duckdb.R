@@ -7,7 +7,7 @@ library(duckdb)
 library(fs)
 
 # ---------- Configuration ----------
-data_dir <- "/Users/alexphan/Desktop/MBAT-Internship-Project/data_slo"
+data_dir <- "/Users/alexphan/Desktop/MBAT-Internship-Project/scraped_data/data_slo"
 db_dir <- "/Users/alexphan/Desktop/MBAT-Internship-Project/db"
 db_path <- file.path(db_dir, "slovenian_fuel_data.duckdb")
 table_name <- "slovenian_fuel"

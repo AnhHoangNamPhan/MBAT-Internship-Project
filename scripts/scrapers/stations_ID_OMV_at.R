@@ -10,7 +10,7 @@ library(stringr)
 # ---- config ----
 country_iso <- "AUT"
 lang        <- "DE"
-out_dir     <- "~/Desktop/MBAT-Internship-Project/data_OMV_at"
+out_dir     <- "~/Desktop/MBAT-Internship-Project/scraped_data/data_OMV_at"
 dir.create(path.expand(out_dir), recursive = TRUE, showWarnings = FALSE)
 out_csv     <- path.expand(file.path(out_dir, "stations_AUT.csv"))
 
