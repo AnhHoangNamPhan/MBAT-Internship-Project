@@ -3,7 +3,7 @@
 cd ~/Desktop/MBAT-Internship-Project/
 
 # Create timestamp in format YYYY-MM-DD_HH-MM-SS
-TIMESTAMP=$(date -v-1d +%Y-%m-%d_%H-%M)
+TIMESTAMP=$(date +%Y-%m-%d_%H-%M)
 
 # for REGION in {1..20}; do
 #   curl "https://carburanti.mise.gov.it/ospzApi/registry/province?regionId=${REGION}" \

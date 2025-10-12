@@ -3,7 +3,10 @@
 cd ~/Desktop/MBAT-Internship-Project/
 
 # Create timestamp in format YYYY-MM-DD_HH-MM-SS
-TIMESTAMP=$(date -v-1d +%Y-%m-%d_%H-%M)
+TIMESTAMP=$(date +%Y-%m-%d_%H-%M)
+
+# Create output directory if it doesn't exist
+mkdir -p "scraped_data/data_slo"
 
 # Pages beyond 23 are probably empty, but it doens't hurt to check them
 for PAGE in {1..25}; do
@@ -13,8 +16,8 @@ for PAGE in {1..25}; do
     -H 'Connection: keep-alive' \
     -H 'Content-Type: application/json' \
     -H 'Referer: https://goriva.si/?position=&radius=&franchise=&name=&o=' \
-    > "data_slo/fuel_page-${PAGE}_${TIMESTAMP}.json"
-  gzip "data_slo/fuel_page-${PAGE}_${TIMESTAMP}.json"
+    > "scraped_data/data_slo/fuel_page-${PAGE}_${TIMESTAMP}.json"
+  gzip "scraped_data/data_slo/fuel_page-${PAGE}_${TIMESTAMP}.json"
   sleep 1
 done
 

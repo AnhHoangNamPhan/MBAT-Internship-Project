@@ -18,7 +18,7 @@ library(readr)
 # Set up logging
 setup_logging <- function() {
   # Create logs directory
-  log_dir <- "~/Desktop/MBAT-Internship-Project/cache_lmenergy_at"
+  log_dir <- "~/Desktop/MBAT-Internship-Project/log_files/cache_lmenergy_at"
   dir.create(path.expand(log_dir), recursive = TRUE, showWarnings = FALSE)
   
   # Create log file with timestamp

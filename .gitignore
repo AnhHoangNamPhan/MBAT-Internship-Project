@@ -17,6 +17,8 @@ data_shell_at/
 data_shell_italia/
 data_slo/
 tankerkoenig-data/
+data_arboe_at/
+data_lm_at/
 
 # Cache files
 cache/
@@ -37,6 +39,7 @@ cache_shell_italia/
 .Rhistory
 .RData
 .Rproj.user/
+.Rapp.history
 
 # IDE/Editor files
 .vscode/

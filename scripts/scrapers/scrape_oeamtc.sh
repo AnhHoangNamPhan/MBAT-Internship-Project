@@ -3,7 +3,7 @@
 cd ~/Desktop/MBAT-Internship-Project/
 
 # Create timestamp in format YYYY-MM-DD_HH-MM-SS
-TIMESTAMP=$(date -v-1d +%Y-%m-%d_%H-%M)
+TIMESTAMP=$(date +%Y-%m-%d_%H-%M)
 
 echo "Obtaining fuel data"
 curl 'https://www.oeamtc.at/routenplaner/api/gis-fuel/fuel/search?count=10000&include=LIST_HEADER,LIST_RESULTS,DATA_HEADER,DATA_GEODATA,DATA_OPENINGS,DATA_FACILITIES,DATA_OPERATOR,DATA_PRICES,DATA_RATINGS,DATA_UTILIZATION,DETAIL_HEADER,DATA_ACCESSIBILITY' \
