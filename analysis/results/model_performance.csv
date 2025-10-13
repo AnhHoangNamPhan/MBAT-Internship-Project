@@ -1,0 +1,5 @@
+"Metric","Value","Interpretation"
+"Test RMSE","0.4034 €","Root Mean Square Error"
+"Test MAE","0.3555 €","Mean Absolute Error"
+"Test R²","-25.2453","Coefficient of Determination"
+"Overfitting Ratio","1.19","Test MSE / Train MSE"
