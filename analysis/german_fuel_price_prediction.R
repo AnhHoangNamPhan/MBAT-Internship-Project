@@ -20,71 +20,108 @@ dbExecute(con, "SET max_temp_directory_size='20GB'")
 dbExecute(con, "SET threads=8")
 dbExecute(con, "SET preserve_insertion_order=false")
 
-# Feature engineering function
+# Feature engineering function with PERIODICAL encoding
 create_features <- function(data) {
   data %>%
     mutate(
-      # Temporal features
+      # Temporal features - periodical ENCODING
       hour = hour(date),
       day_of_week = wday(date),
       month = month(date),
       
-      # Fuel type encoding
-      fuel_diesel = ifelse(fuel_type == "diesel", 1, 0),
-      fuel_e5 = ifelse(fuel_type == "e5", 1, 0),
-      fuel_e10 = ifelse(fuel_type == "e10", 1, 0)
+      # Periodical encoding for hour (24-hour cycle)
+      hour_sin = sin(2 * pi * hour / 24),
+      hour_cos = cos(2 * pi * hour / 24),
+      
+      # Periodical encoding for day of week (7-day cycle)
+      dow_sin = sin(2 * pi * day_of_week / 7),
+      dow_cos = cos(2 * pi * day_of_week / 7),
+      
+      # Periodical encoding for month (12-month cycle)
+      month_sin = sin(2 * pi * month / 12),
+      month_cos = cos(2 * pi * month / 12),
+      
     ) %>%
-    select(-fuel_type)  # Remove original fuel_type column
+    select(-hour, -day_of_week, -month, -date) 
 }
 
-# Function to normalize features (Z-score normalization)
-normalize_features <- function(data) {
+# Function to normalize features using entire training statistics
+# For lat/long: use centering only (preserves geographic relationships)
+# For density/time: use Z-score normalization
+normalize_features <- function(data, stats) {
   data %>%
     mutate(
-      # Normalize numeric features using data's own statistics
-      # Handle division by zero when sd = 0 (all values are the same)
-      hour_norm = ifelse(sd(hour, na.rm = TRUE) == 0, 0, (hour - mean(hour, na.rm = TRUE)) / sd(hour, na.rm = TRUE)),
-      day_of_week_norm = ifelse(sd(day_of_week, na.rm = TRUE) == 0, 0, (day_of_week - mean(day_of_week, na.rm = TRUE)) / sd(day_of_week, na.rm = TRUE)),
-      month_norm = ifelse(sd(month, na.rm = TRUE) == 0, 0, (month - mean(month, na.rm = TRUE)) / sd(month, na.rm = TRUE)),
-      latitude_norm = ifelse(sd(latitude, na.rm = TRUE) == 0, 0, (latitude - mean(latitude, na.rm = TRUE)) / sd(latitude, na.rm = TRUE)),
-      longitude_norm = ifelse(sd(longitude, na.rm = TRUE) == 0, 0, (longitude - mean(longitude, na.rm = TRUE)) / sd(longitude, na.rm = TRUE)),
-      nearby_stations_1km_norm = ifelse(sd(nearby_stations_1km, na.rm = TRUE) == 0, 0, (nearby_stations_1km - mean(nearby_stations_1km, na.rm = TRUE)) / sd(nearby_stations_1km, na.rm = TRUE))
+      # Centering for coordinates
+      latitude_centered = latitude - stats$latitude_mean,
+      longitude_centered = longitude - stats$longitude_mean,
+      
+      # Z-score normalization for density feature
+      nearby_stations_1km_norm = ifelse(stats$nearby_stations_1km_sd == 0, 0, (nearby_stations_1km - stats$nearby_stations_1km_mean) / stats$nearby_stations_1km_sd)
     ) %>%
-    select(-hour, -day_of_week, -month, -latitude, -longitude, -nearby_stations_1km)  # Remove original features
+    select(-latitude, -longitude, -nearby_stations_1km)  # Remove original features
 }
 
-# Load station metadata for nearby station calculation
+# Load station metadata
 station_metadata <- dbGetQuery(con, "
-  SELECT uuid, latitude, longitude, brand
+  SELECT uuid, latitude, longitude, brand, nearby_stations_1km
   FROM german_stations
 ")
 
-# Brand categorization
-station_metadata <- station_metadata %>%
+# Brand categorization based on station counts (data-driven)
+# Calculate station counts per brand
+brand_counts <- station_metadata %>%
+  filter(!is.na(brand) & brand != "") %>%
+  group_by(brand) %>%
+  summarise(station_count = n(), .groups = 'drop')
+
+cat("Brand categorization:\n")
+cat("  Major: >= 700 stations\n")
+cat("  Moderate: 100-699 stations\n")
+cat("  Small: < 100 stations\n")
+cat("  Unknown: Missing brand data\n\n")
+
+# Apply thresholds to categorize brands
+brand_categories <- brand_counts %>%
   mutate(
     brand_category = case_when(
-      # Major brands (known large chains)
-      brand %in% c("ARAL", "Shell", "ESSO", "TotalEnergies") ~ "Major",
-      # Moderate brands (known regional chains)
-      brand %in% c("AVIA", "JET", "STAR") ~ "Moderate", 
-      # Small brands (everything else with a name)
-      !is.na(brand) & brand != "" ~ "Small",
-      # Unknown (missing data)
-      TRUE ~ "Unknown"
+      station_count >= 700 ~ "Major",
+      station_count >= 100 ~ "Moderate",
+      TRUE ~ "Small"
     )
   )
 
+# Join back to station metadata
+station_metadata <- station_metadata %>%
+  left_join(brand_categories %>% select(brand, brand_category), by = "brand") %>%
+  mutate(
+    brand_category = ifelse(is.na(brand_category), "Unknown", brand_category)
+  )
+
+# Show categorization summary
 cat("Station metadata loaded:", nrow(station_metadata), "stations\n")
+category_summary <- station_metadata %>%
+  group_by(brand_category) %>%
+  summarise(
+    stations = n(),
+    percentage = round(n() / nrow(station_metadata) * 100, 1),
+    .groups = 'drop'
+  ) %>%
+  arrange(desc(stations))
+
+cat("\nBrand category distribution:\n")
+print(category_summary)
 
 # Time-based train/test split
-# Train: Dec 2024 - July 2025 (80%)
+# Train: Dec 2024 - July 2025
 # Test: Aug - Sep 2025 (20%)
 train_start <- "2024-12-01"
 train_end <- "2025-07-31"
 test_start <- "2025-08-01"
 test_end <- "2025-09-30"
 
+
 #### LINEAR REGRESSION
+
 
 # Initialize model parameters
 learning_rate <- 0.001
@@ -101,27 +138,48 @@ total_train_records <- dbGetQuery(con, paste0("
 
 max_chunks <- ceiling(total_train_records / chunk_size)  # Cover all training data
 
-cat("Total training records:", total_train_records, "\n")
-cat("Processing", max_chunks, "chunks of", chunk_size, "records each\n")
+# CALCULATE GLOBAL NORMALIZATION STATISTICS
 
+# Calculate GLOBAL statistics from all training data 
+global_stats_query <- paste0("
+  SELECT 
+    AVG(s.latitude) as latitude_mean,
+    STDDEV(s.latitude) as latitude_sd,
+    AVG(s.longitude) as longitude_mean,
+    STDDEV(s.longitude) as longitude_sd,
+    AVG(s.nearby_stations_1km) as nearby_stations_1km_mean,
+    STDDEV(s.nearby_stations_1km) as nearby_stations_1km_sd
+  FROM german_prices p
+  JOIN german_stations s ON p.station_uuid = s.uuid
+  WHERE p.date >= '", train_start, "' 
+    AND p.date <= '", train_end, "'
+")
 
-# Use simple normalization - calculate from first chunk
-feature_stats <- NULL
+global_stats <- dbGetQuery(con, global_stats_query)
+
+# Store spatial and density feature statistics
+feature_stats <- list(
+  latitude_mean = global_stats$latitude_mean,
+  latitude_sd = global_stats$latitude_sd,
+  longitude_mean = global_stats$longitude_mean,
+  longitude_sd = global_stats$longitude_sd,
+  nearby_stations_1km_mean = global_stats$nearby_stations_1km_mean,
+  nearby_stations_1km_sd = global_stats$nearby_stations_1km_sd
+)
 
 # Initialize weights (bias + features)
-# Features: hour, day_of_week, month,
-#           fuel_diesel, fuel_e5, fuel_e10, latitude, longitude, nearby_stations_1km, 
+# Features: hour_sin, hour_cos, dow_sin, dow_cos, month_sin, month_cos,
+#           fuel_type (3 levels: e10, e5, diesel), 
+#           latitude_centered, longitude_centered, nearby_stations_1km_norm, 
 #           brand_category (4 levels: Major, Moderate, Small, Unknown)
-n_features <- 13
-weights <- rep(0, n_features)
-bias <- 0
+
+n_features <- 14  # 6 cyclical + 2 fuel types (e10 is reference) + 3 spatial + 3 brand categories (Unknown is reference)
+
 
 # Training metrics
 total_samples <- 0
 mse_history <- c()
 chunk_count <- 0
-
-cat("Processing training data in chunks of", chunk_size, "records...\n")
 
 # Process training data in chunks
 for(chunk_idx in 1:max_chunks) {
@@ -175,26 +233,27 @@ for(chunk_idx in 1:max_chunks) {
     left_join(station_metadata %>% select(uuid, brand_category), 
               by = c("station_uuid" = "uuid"))
   
-  # Normalize features
-  chunk_features <- normalize_features(chunk_features)
+  # Normalize features using GLOBAL statistics
+  chunk_features <- normalize_features(chunk_features, feature_stats)
   
   # Ensure categorical variables are factors with multiple levels
   chunk_features <- chunk_features %>%
     mutate(
       brand_category = as.factor(brand_category),
-      fuel_diesel = as.factor(fuel_diesel),
-      fuel_e5 = as.factor(fuel_e5),
-      fuel_e10 = as.factor(fuel_e10)
+      fuel_type = as.factor(fuel_type)
     )
+  
+  # Set Unknown as reference category 
+  chunk_features$brand_category <- relevel(chunk_features$brand_category, ref = "Unknown")
   
   # Remove any rows with NA values
   valid_rows <- complete.cases(chunk_features)
   chunk_features <- chunk_features[valid_rows, ]
   
-  # Create feature matrix with normalized features
-  X <- model.matrix(~ hour_norm + day_of_week_norm + month_norm +
-                      fuel_diesel + fuel_e5 + fuel_e10 + latitude_norm + longitude_norm + 
-                      nearby_stations_1km_norm + brand_category - 1, 
+  # Create feature matrix with periodical and normalized features
+X <- model.matrix(~ hour_sin + hour_cos + dow_sin + dow_cos + month_sin + month_cos +
+                                    fuel_type + 
+                                    latitude_centered + longitude_centered + nearby_stations_1km_norm + brand_category,
                     data = chunk_features, drop.unused.levels = TRUE) # handle single-level factors
   
   y <- chunk_features$price
@@ -204,20 +263,39 @@ for(chunk_idx in 1:max_chunks) {
     next
   }
   
-  # Add bias column
-  X_with_bias <- cbind(1, X)
+  # Initialize weights on first iteration to match actual X dimensions
+  if(chunk_idx == 1) {
+    weights <- rep(0, ncol(X))
+    cat("Initialized weights vector with", ncol(X), "features\n")
+    cat("Feature names:", paste(colnames(X), collapse = ", "), "\n")
+  }
   
-  # Update weights using gradient descent
-  predictions <- X_with_bias %*% c(bias, weights)
+  # Use X directly (already includes intercept column from model.matrix)
+  predictions <- as.vector(X %*% weights)
   errors <- y - predictions
   mse <- mean(errors^2)
   
-  # Gradient descent update
-  gradient_bias <- -2 * mean(errors)
+  # Gradient descent update with clipping 
   gradient_weights <- -2 * colMeans(X * as.vector(errors))
   
-  bias <- bias - learning_rate * gradient_bias
-  weights <- weights - learning_rate * gradient_weights
+  # Gradient clipping to prevent explosion
+  max_grad <- max(abs(gradient_weights), na.rm = TRUE)
+  if(max_grad > 1000) {  # Moderate clipping
+    gradient_weights <- gradient_weights * (1000 / max_grad)
+    cat("  Gradient clipped at chunk", chunk_idx, "- max grad:", round(max_grad, 2), "\n")
+  }
+  
+  # Update weights with clipping
+  weight_update <- learning_rate * gradient_weights
+  weights <- weights - weight_update
+  
+  # Weight bounds checking to prevent explosion
+  if(max(abs(weights)) > 1000) {
+    weights <- weights * (1000 / max(abs(weights)))
+    cat("  Weights scaled down at chunk", chunk_idx, "\n")
+  }
+  
+  # Weight bounds checking 
   
   # Update metrics
   total_samples <- total_samples + length(y)
@@ -232,15 +310,13 @@ for(chunk_idx in 1:max_chunks) {
 }
 
 cat("Total samples processed:", total_samples, "\n")
-cat("Final MSE:", round(tail(mse_history, 1), 4), "\n")
-cat("Final bias:", round(bias, 4), "\n")
+final_train_mse <- tail(mse_history, 1)
+cat("Final Training MSE:", round(final_train_mse, 4), "\n")
 cat("Final weights:", round(weights, 4), "\n\n")
 
-# === MODEL TESTING ON 20% TEST SET ===
-cat("=== Testing Model on Test Set ===\n")
-cat("Test period:", test_start, "to", test_end, "\n")
+# MODEL TESTING ON 20% TEST SET 
 
-# Check and reconnect database connection
+##### Check and reconnect database connection
 if(!dbIsValid(con)) {
   cat("Database connection lost, reconnecting...\n")
   con <- dbConnect(duckdb(), db_path, read_only = FALSE)
@@ -269,7 +345,6 @@ test_actual <- c()
 test_chunk_count <- 0
 
 # Test the model on test data
-cat("Testing model on test data...\n")
 for(chunk_idx in 1:max_test_chunks) {
   offset <- (chunk_idx - 1) * chunk_size
   
@@ -310,7 +385,7 @@ for(chunk_idx in 1:max_test_chunks) {
     pivot_longer(cols = c(diesel, e5, e10), 
                  names_to = "fuel_type", 
                  values_to = "price") %>%
-    filter(price > 0 & price < 10)
+    filter(price > 0 & price < 10)  # Remove invalid prices
   
   # Add features
   test_chunk_features <- create_features(test_chunk_long)
@@ -320,17 +395,18 @@ for(chunk_idx in 1:max_test_chunks) {
     left_join(station_metadata %>% select(uuid, brand_category), 
               by = c("station_uuid" = "uuid"))
   
-  # Normalize features
-  test_chunk_features <- normalize_features(test_chunk_features)
+  # Normalize features using GLOBAL statistics
+  test_chunk_features <- normalize_features(test_chunk_features, feature_stats)
   
   # Convert to factors
   test_chunk_features <- test_chunk_features %>%
     mutate(
       brand_category = as.factor(brand_category),
-      fuel_diesel = as.factor(fuel_diesel),
-      fuel_e5 = as.factor(fuel_e5),
-      fuel_e10 = as.factor(fuel_e10)
+      fuel_type = as.factor(fuel_type)
     )
+  
+  # Set Unknown as reference category
+  test_chunk_features$brand_category <- relevel(test_chunk_features$brand_category, ref = "Unknown")
   
   # Remove NAs
   valid_rows <- complete.cases(test_chunk_features)
@@ -342,16 +418,15 @@ for(chunk_idx in 1:max_test_chunks) {
   }
   
   # Create test feature matrix
-  X_test <- model.matrix(~ hour_norm + day_of_week_norm + month_norm +
-                         fuel_diesel + fuel_e5 + fuel_e10 + latitude_norm + longitude_norm + 
-                         nearby_stations_1km_norm + brand_category - 1, 
+  X_test <- model.matrix(~ hour_sin + hour_cos + dow_sin + dow_cos + month_sin + month_cos +
+                         fuel_type + 
+                         latitude_centered + longitude_centered + nearby_stations_1km_norm + brand_category, 
                         data = test_chunk_features, drop.unused.levels = TRUE)
   
   y_test <- test_chunk_features$price
   
-  # Make predictions
-  X_test_with_bias <- cbind(1, X_test)
-  test_pred <- X_test_with_bias %*% c(bias, weights)
+  # Make predictions 
+  test_pred <- as.vector(X_test %*% weights)
   
   # Store predictions and actual values
   test_predictions <- c(test_predictions, as.numeric(test_pred))
@@ -381,25 +456,18 @@ if(length(test_predictions) > 0) {
   # Compare with training performance
   final_train_mse <- tail(mse_history, 1)
   cat("Final Train MSE:", round(final_train_mse, 4), "\n")
+  cat("Final Test MSE:", round(test_mse, 4), "\n")
   cat("Overfitting check (Test MSE / Train MSE):", round(test_mse / final_train_mse, 2), "\n")
-  
-  if(test_mse / final_train_mse > 1.5) {
-    cat("Potential overfitting detected\n")
-  } else {
-    cat("Good generalization performance\n")
-  }
-} else {
-  cat("No valid test data found\n")
-}
+} 
 
-# Save model with test results
+# Save model with test results and normalization statistics
 model_results <- list(
   weights = weights,
-  bias = bias,
   mse_history = mse_history,
   total_samples = total_samples,
   chunk_count = chunk_count,
   feature_names = colnames(X),
+  feature_stats = feature_stats,  # Save global normalization statistics
   train_period = c(train_start, train_end),
   test_period = c(test_start, test_end),
   test_predictions = test_predictions,
@@ -411,7 +479,16 @@ model_results <- list(
 )
 
 # Save models
-saveRDS(model_results, "models/german_linear_regression_model.rds")
+saveRDS(model_results, "german_linear_regression_model.rds")
+
+cat("Model saved to: german_linear_regression_model.rds\n")
+
+# FINAL PERFORMANCE SUMMARY
+cat("Training MSE:", round(final_train_mse, 4), "\n")
+if(exists("test_mse")) {
+  cat("Test MSE:", round(test_mse, 4), "\n")
+  cat("Test RMSE:", round(test_rmse, 4), "€\n")
+  cat("Test R²:", round(test_r2, 4), "\n")
 
 # Plot training progress
 if(length(mse_history) > 1) {
@@ -474,6 +551,7 @@ if(length(mse_history) > 1) {
   }
   
   print(combined_plot)
+}
 }
 
 # Close database connection
