@@ -19,6 +19,7 @@ data_slo/
 tankerkoenig-data/
 data_arboe_at/
 data_lm_at/
+scraped_data/
 
 # Cache files
 cache/
