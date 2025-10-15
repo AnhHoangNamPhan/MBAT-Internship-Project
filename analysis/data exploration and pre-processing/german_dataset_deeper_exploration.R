@@ -112,7 +112,7 @@ record_distribution <- dbGetQuery(con, "
 ")
 print(record_distribution)
 
-# 4. Temporal spacing analysis (important for LSTM)
+# 4. Temporal spacing analysis (for LSTM)
 
 # Sample a few stations to check temporal spacing
 sample_stations <- dbGetQuery(con, "
@@ -162,11 +162,8 @@ for(i in 1:length(sample_stations)) {
 
 # 5. Data quality analysis
 
-# NA values check in joined data (training sample)
-train_start <- "2024-12-01"
-train_end <- "2025-07-31"
-
-sample_query <- paste0("
+# NA values check in joined data
+sample_query <- "
   SELECT 
     p.date,
     p.station_uuid,
@@ -175,14 +172,13 @@ sample_query <- paste0("
     p.e10,
     s.latitude,
     s.longitude,
-    s.brand,
-    s.nearby_stations_1km
+    s.brand
   FROM german_prices p
   JOIN german_stations s ON p.station_uuid = s.uuid
-  WHERE p.date >= '", train_start, "' 
-    AND p.date <= '", train_end, "'
+  WHERE p.date >= '2024-12-01' 
+    AND p.date <= '2025-09-30'
   LIMIT 10000
-")
+"
 
 sample_data <- dbGetQuery(con, sample_query)
 
@@ -257,7 +253,6 @@ hourly_data <- dbGetQuery(con, "
 
 p1 <- ggplot(hourly_data, aes(x = hour, y = record_count)) +
   geom_line(color = "blue", size = 1) +
-  geom_point(color = "red", size = 2) +
   labs(title = "German Fuel Data Collection by Hour",
        x = "Hour of Day", y = "Number of Records") +
   scale_x_continuous(breaks = 0:23) +
@@ -321,18 +316,189 @@ p3 <- ggplot(price_long, aes(x = fuel_type, y = price, fill = fuel_type)) +
 
 print(p3)
 
-# 7. LSTM suitability assessment
+# 7.1 Coordinate outliers check
 
-# Check if data is evenly spaced
-even_spacing_check <- dbGetQuery(con, "
+# Check coordinate ranges and outliers
+coord_analysis <- dbGetQuery(con, "
   SELECT 
-    COUNT(DISTINCT EXTRACT(minute FROM date)) as unique_minutes,
-    COUNT(DISTINCT EXTRACT(hour FROM date)) as unique_hours,
-    COUNT(DISTINCT EXTRACT(day FROM date)) as unique_days
-  FROM german_prices
+    COUNT(*) as total_stations,
+    COUNT(CASE WHEN latitude IS NULL OR longitude IS NULL THEN 1 END) as missing_coords,
+    COUNT(CASE WHEN latitude = 0 AND longitude = 0 THEN 1 END) as zero_coords,
+    COUNT(CASE WHEN latitude > 100000 OR longitude > 100000 THEN 1 END) as extreme_outliers,
+    COUNT(CASE WHEN latitude > 60 OR latitude < 40 OR longitude > 20 OR longitude < 0 THEN 1 END) as outside_germany,
+    COUNT(CASE WHEN latitude BETWEEN 47 AND 55 AND longitude BETWEEN 5 AND 15 THEN 1 END) as valid_german_coords,
+    MIN(latitude) as min_lat,
+    MAX(latitude) as max_lat,
+    MIN(longitude) as min_lon,
+    MAX(longitude) as max_lon,
+    AVG(latitude) as avg_lat,
+    AVG(longitude) as avg_lon,
+    STDDEV(latitude) as std_lat,
+    STDDEV(longitude) as std_lon
+  FROM german_stations
+  WHERE latitude IS NOT NULL AND longitude IS NOT NULL
 ")
 
-print(even_spacing_check)
+print(coord_analysis)
+
+# Find coordinate outliers
+if(coord_analysis$extreme_outliers > 0 || coord_analysis$outside_germany > 0) {
+  cat("\n=== COORDINATE OUTLIERS FOUND ===\n")
+  
+  # Show extreme outliers (coordinates > 100000)
+  if(coord_analysis$extreme_outliers > 0) {
+    cat("EXTREME OUTLIERS (coordinates > 100000):\n")
+    extreme_outliers <- dbGetQuery(con, "
+      SELECT uuid, name, latitude, longitude, brand
+      FROM german_stations
+      WHERE latitude > 100000 OR longitude > 100000
+      ORDER BY ABS(latitude - 50) + ABS(longitude - 10) DESC
+    ")
+    print(extreme_outliers)
+  }
+  
+  # Show outliers outside German bounds
+  if(coord_analysis$outside_germany > 0) {
+    cat("\nOUTLIERS OUTSIDE GERMAN BOUNDS (47-55°N, 5-15°E):\n")
+    outside_outliers <- dbGetQuery(con, "
+      SELECT uuid, name, latitude, longitude, brand
+      FROM german_stations
+      WHERE (latitude > 60 OR latitude < 40 OR longitude > 20 OR longitude < 0)
+        AND NOT (latitude > 100000 OR longitude > 100000)
+      ORDER BY ABS(latitude - 50) + ABS(longitude - 10) DESC
+      LIMIT 20
+    ")
+    print(outside_outliers)
+  }
+  
+  cat("\nThese outliers will be removed in preprocessing before modeling.\n")
+}
+
+# 7.2 Brand check
+
+brand_analysis <- dbGetQuery(con, "
+  SELECT 
+    CASE 
+      WHEN brand IS NULL OR brand = '' THEN 'Unknown/Missing'
+      ELSE brand
+    END as brand_category,
+    COUNT(*) as station_count,
+    ROUND(COUNT(*) * 100.0 / (SELECT COUNT(*) FROM german_stations), 2) as percentage
+  FROM german_stations
+  GROUP BY brand_category
+  ORDER BY station_count DESC
+  LIMIT 20
+")
+
+print(brand_analysis)
+
+# 7.3 Station density analysis (basic spatial info only)
+
+station_density <- dbGetQuery(con, "
+  SELECT 
+    COUNT(*) as total_stations,
+    COUNT(CASE WHEN latitude IS NOT NULL AND longitude IS NOT NULL THEN 1 END) as stations_with_coords,
+    MIN(latitude) as min_lat,
+    MAX(latitude) as max_lat,
+    MIN(longitude) as min_lon,
+    MAX(longitude) as max_lon
+  FROM german_stations
+")
+
+print(station_density)
+
+# 8. DATA FILTERING FOR MODELING
+
+# 8.1 Check price records without station metadata
+metadata_coverage <- dbGetQuery(con, "
+  SELECT 
+    COUNT(*) as total_price_records,
+    COUNT(DISTINCT station_uuid) as unique_stations_in_prices,
+    COUNT(CASE WHEN s.uuid IS NOT NULL THEN 1 END) as records_with_metadata,
+    COUNT(CASE WHEN s.uuid IS NULL THEN 1 END) as records_without_metadata,
+    ROUND(COUNT(CASE WHEN s.uuid IS NULL THEN 1 END) * 100.0 / COUNT(*), 2) as pct_without_metadata
+  FROM german_prices p
+  LEFT JOIN german_stations s ON p.station_uuid = s.uuid
+")
+
+print(metadata_coverage)
+
+# 8.2 Check which stations in prices table are missing from stations table
+missing_stations <- dbGetQuery(con, "
+  SELECT 
+    p.station_uuid,
+    COUNT(*) as price_record_count,
+    MIN(p.date) as earliest_price,
+    MAX(p.date) as latest_price
+  FROM german_prices p
+  LEFT JOIN german_stations s ON p.station_uuid = s.uuid
+  WHERE s.uuid IS NULL
+  GROUP BY p.station_uuid
+  ORDER BY price_record_count DESC
+  LIMIT 20
+")
+
+print(missing_stations)
+
+# 8.3 Sample of filtered data for modeling (INNER JOIN approach)
+filtered_sample <- dbGetQuery(con, "
+  SELECT 
+    p.date,
+    p.station_uuid,
+    p.diesel,
+    p.e5,
+    p.e10,
+    s.latitude,
+    s.longitude,
+    s.brand
+  FROM german_prices p
+  INNER JOIN german_stations s ON p.station_uuid = s.uuid
+  WHERE p.date >= '2024-12-01' AND p.date <= '2025-09-30'
+    AND p.diesel > 0 AND p.diesel < 10
+    AND s.latitude IS NOT NULL 
+    AND s.longitude IS NOT NULL
+    AND s.latitude BETWEEN 47 AND 55 
+    AND s.longitude BETWEEN 5 AND 15
+  ORDER BY p.date
+  LIMIT 1000
+")
+
+# Check data quality in filtered sample
+filtered_na_counts <- sapply(filtered_sample, function(x) sum(is.na(x)))
+for(i in 1:length(filtered_na_counts)) {
+  col_name <- names(filtered_na_counts)[i]
+  na_count <- filtered_na_counts[i]
+  na_pct <- round(na_count / nrow(filtered_sample) * 100, 2)
+  cat("Filtered data - ", col_name, ": ", na_count, " (", na_pct, "%)\n")
+}
+
+# 8.4 Overall dataset statistics after filtering
+overall_stats <- dbGetQuery(con, "
+  SELECT 
+    COUNT(*) as total_filtered_records,
+    COUNT(DISTINCT p.station_uuid) as unique_stations,
+    MIN(p.date) as earliest_date,
+    MAX(p.date) as latest_date,
+    AVG(p.diesel) as avg_diesel_price,
+    AVG(p.e5) as avg_e5_price,
+    AVG(p.e10) as avg_e10_price,
+    COUNT(CASE WHEN p.diesel IS NULL THEN 1 END) as null_diesel,
+    COUNT(CASE WHEN s.latitude IS NULL THEN 1 END) as null_latitude,
+    COUNT(CASE WHEN s.longitude IS NULL THEN 1 END) as null_longitude,
+    COUNT(CASE WHEN s.brand IS NULL OR s.brand = '' THEN 1 END) as null_brand
+  FROM german_prices p
+  INNER JOIN german_stations s ON p.station_uuid = s.uuid
+  WHERE p.date >= '2024-12-01' AND p.date <= '2025-09-30'
+    AND p.diesel > 0 AND p.diesel < 10
+    AND s.latitude IS NOT NULL 
+    AND s.longitude IS NOT NULL
+    AND s.latitude BETWEEN 47 AND 55 
+    AND s.longitude BETWEEN 5 AND 15
+")
+
+print(overall_stats)
+
+# 9. LSTM suitability assessment
 
 # Station consistency check
 station_consistency <- dbGetQuery(con, "

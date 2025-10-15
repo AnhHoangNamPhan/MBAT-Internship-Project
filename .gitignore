@@ -27,12 +27,15 @@ cache_bp_italia/
 cache_shell_at/
 cache_shell_italia/
 
-# Database files
+# Database files (ignore all - too large for GitHub)
 *.duckdb
 *.duckdb.wal
 
 # Log files
 *.log
+
+# R plot files (redundant with PNG exports)
+*.pdf
 
 # System files
 .DS_Store
@@ -44,3 +47,8 @@ cache_shell_italia/
 # IDE/Editor files
 .vscode/
 .idea/
+.cursor/
+
+# Large model files (keep small ones, ignore large ones)
+*.rds
+!analysis/linear_regression/diesel_linear_regression_model.rds

@@ -22,13 +22,13 @@ con <- dbConnect(duckdb(db_path))
 create_table_if_not_exists <- function(table_name) {
   # Check connection validity first
   if (!dbIsValid(con)) {
-    cat("🔄 Reconnecting to DuckDB...\n")
+    cat("Reconnecting to DuckDB...\n")
     con <<- dbConnect(duckdb(db_path))
   }
   
   # Check if table exists
   if (!dbExistsTable(con, table_name)) {
-    cat("📋 Creating table:", table_name, "\n")
+    cat("Creating table:", table_name, "\n")
     
     # Create table with proper schema
     create_sql <- paste0("
@@ -56,9 +56,9 @@ create_table_if_not_exists <- function(table_name) {
     ")
     
     dbExecute(con, create_sql)
-    cat("✅ Table created successfully\n")
+    cat("Table created successfully\n")
   } else {
-    cat("📋 Table", table_name, "already exists\n")
+    cat("Table", table_name, "already exists\n")
   }
 }
 
@@ -91,13 +91,13 @@ for (file in geojson_files) {
   
   data <- try(fromJSON(file, simplifyVector = FALSE), silent = TRUE)
   if (inherits(data, "try-error") || is.null(data$features)) {
-    cat("⚠️ Failed to read or no features in", file, "\n")
+    cat("Failed to read or no features in", file, "\n")
     next
   }
   
   features <- data$features
   if (!is.list(features) || length(features) == 0) {
-    cat("⚠️ No valid features in", file, "\n")
+    cat("No valid features in", file, "\n")
     next
   }
   
@@ -136,7 +136,7 @@ for (file in geojson_files) {
     for (i in 1:nrow(df)) {
       # Check connection validity before each query
       if (!dbIsValid(con)) {
-        cat("🔄 Reconnecting to DuckDB...\n")
+        cat("Reconnecting to DuckDB...\n")
         con <<- dbConnect(duckdb(db_path))
       }
       
@@ -152,17 +152,17 @@ for (file in geojson_files) {
     }
     
     if (duplicate_count > 0) {
-      cat("🔄 Found", duplicate_count, "existing rows, updating...\n")
+      cat("Found", duplicate_count, "existing rows, updating...\n")
     }
     
     # Insert data (DuckDB will handle duplicates with PRIMARY KEY constraint)
     dbWriteTable(con, table_name, df, append = TRUE)
-    cat("✅ Written", nrow(df), "rows to", table_name, "\n")
+    cat("Written", nrow(df), "rows to", table_name, "\n")
   } else {
-    cat("⚠️ Skipping write: no valid rows in", basename(file), "\n")
+    cat("Skipping write: no valid rows in", basename(file), "\n")
   }
 }
 
 # ---------- done ----------
 dbDisconnect(con)
-cat("✅ All files loaded into DuckDB at:", db_path, "\n")
+cat("All files loaded into DuckDB at:", db_path, "\n")

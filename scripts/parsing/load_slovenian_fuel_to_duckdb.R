@@ -58,13 +58,13 @@ extract_page_number <- function(filename) {
 create_table_if_not_exists <- function(table_name) {
   # Check connection validity first
   if (!DBI::dbIsValid(con)) {
-    cat("ğŸ”„ Reconnecting to DuckDB...\n")
+    cat(" Reconnecting to DuckDB...\n")
     con <<- connect_duckdb()
   }
   
   # Check if table exists
   if (!DBI::dbExistsTable(con, table_name)) {
-    cat("ğŸ“‹ Creating table:", table_name, "\n")
+    cat(" Creating table:", table_name, "\n")
     
     # Create table with proper schema
     create_sql <- paste0("
@@ -87,9 +87,9 @@ create_table_if_not_exists <- function(table_name) {
     ")
     
     DBI::dbExecute(con, create_sql)
-    cat("âœ… Table created successfully\n")
+    cat(" Table created successfully\n")
   } else {
-    cat("â˜‘ï¸ Table", table_name, "already exists\n")
+    cat("˜‘ Table", table_name, "already exists\n")
   }
 }
 
@@ -104,7 +104,7 @@ if (length(json_files) == 0) {
 }
 
 cat("\n", paste(rep("=", 50), collapse=""), "\n")
-cat("ğŸš€ Starting Slovenian Fuel Data Parsing and Loading\n")
+cat("€ Starting Slovenian Fuel Data Parsing and Loading\n")
 cat(paste(rep("=", 50), collapse=""), "\n\n")
 
 total_rows <- 0
@@ -123,7 +123,7 @@ for (file in json_files) {
   raw <- try(jsonlite::fromJSON(file, simplifyVector = FALSE), silent = TRUE)
 
   if (inherits(raw, "try-error") || is.null(raw$results)) {
-    cat("âŒ Error reading or parsing JSON from", basename(file), "\n")
+    cat("Œ Error reading or parsing JSON from", basename(file), "\n")
     failed_files <- failed_files + 1
     next
   }
@@ -196,28 +196,28 @@ for (file in json_files) {
           NA_real_, row$fuel_type, row$fuel_price, row$page_number, row$file_source
         ))
       }
-      cat("âœ… Written", nrow(df), "rows to", table_name, "\n")
+      cat(" Written", nrow(df), "rows to", table_name, "\n")
       total_rows <- total_rows + nrow(df)
       processed_files <- processed_files + 1
     }, error = function(e) {
-      cat("âŒ Error writing to database for", basename(file), ":", e$message, "\n")
+      cat("Œ Error writing to database for", basename(file), ":", e$message, "\n")
       failed_files <- failed_files + 1
     })
   } else {
-    cat("â„¹ï¸ No valid data to write from", basename(file), "\n")
+    cat(" No valid data to write from", basename(file), "\n")
   }
 }
 
 cat("\n", paste(rep("=", 50), collapse=""), "\n")
-cat("ğŸ“Š PROCESSING SUMMARY\n")
+cat(" PROCESSING SUMMARY\n")
 cat(paste(rep("=", 50), collapse=""), "\n")
-cat("âœ… Files processed successfully:", processed_files, "\n")
-cat("âŒ Files failed:", failed_files, "\n")
-cat("ğŸ“ Total files:", length(json_files), "\n")
-cat("ğŸ“Š Total rows written:", total_rows, "\n")
+cat(" Files processed successfully:", processed_files, "\n")
+cat("Œ Files failed:", failed_files, "\n")
+cat(" Total files:", length(json_files), "\n")
+cat(" Total rows written:", total_rows, "\n")
 
 # Optional: Query some statistics
-cat("\nğŸ“ˆ Price statistics for Slovenian fuel:\n")
+cat("\nˆ Price statistics for Slovenian fuel:\n")
 price_query <- paste0("
   SELECT
     fuel_type,

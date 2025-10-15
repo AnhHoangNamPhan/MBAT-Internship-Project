@@ -18,7 +18,7 @@ table_name <- "austrian_archive_fuel"
 data_dir <- '/Users/alexphan/Desktop/MBAT-Internship-Project/scraped_data/data_at_archive'
 
 cat("==================================================\n")
-cat("🇦🇹 Austrian Archive Fuel Data Parser\n")
+cat(" Austrian Archive Fuel Data Parser\n")
 cat("==================================================\n\n")
 
 # ---------- Helper Functions ----------
@@ -30,12 +30,12 @@ connect_duckdb <- function() {
 create_table_if_not_exists <- function(table_name) {
   # Check connection validity first
   if (!DBI::dbIsValid(con)) {
-    cat("🔄 Reconnecting to DuckDB...\n")
+    cat(" Reconnecting to DuckDB...\n")
     con <<- connect_duckdb()
   }
   
   if (!DBI::dbExistsTable(con, table_name)) {
-    cat("📋 Creating table:", table_name, "\n")
+    cat(" Creating table:", table_name, "\n")
     DBI::dbExecute(con, paste0("
       CREATE TABLE ", table_name, " (
         price DOUBLE,
@@ -49,9 +49,9 @@ create_table_if_not_exists <- function(table_name) {
         PRIMARY KEY (station_name, postal_code, state, fuel_type, date)
       )
     "))
-    cat("✅ Table created successfully\n\n")
+    cat(" Table created successfully\n\n")
   } else {
-    cat("✅ Table already exists:", table_name, "\n\n")
+    cat(" Table already exists:", table_name, "\n\n")
   }
 }
 
@@ -123,7 +123,7 @@ parse_txt_file <- function(txt_file, state, fuel_type, date_str, file_source) {
 
 # Connect to DuckDB
 con <- connect_duckdb()
-cat("📊 Connected to DuckDB:", db_path, "\n\n")
+cat(" Connected to DuckDB:", db_path, "\n\n")
 
 # Create table if not exists
 create_table_if_not_exists(table_name)
@@ -131,8 +131,8 @@ create_table_if_not_exists(table_name)
 # Find all extracted folders
 extracted_dirs <- fs::dir_ls(data_dir, recurse = TRUE, type = "directory")
 
-cat("📁 Found", length(extracted_dirs), "extracted folders\n")
-cat("🔄 Processing files...\n\n")
+cat(" Found", length(extracted_dirs), "extracted folders\n")
+cat(" Processing files...\n\n")
 
 total_processed <- 0
 total_records <- 0
@@ -167,7 +167,7 @@ for (extract_dir in extracted_dirs) {
         for (i in 1:nrow(df)) {
           # Check connection validity before each query
           if (!DBI::dbIsValid(con)) {
-            cat("🔄 Reconnecting to DuckDB...\n")
+            cat(" Reconnecting to DuckDB...\n")
             con <<- connect_duckdb()
           }
           
@@ -184,11 +184,11 @@ for (extract_dir in extracted_dirs) {
         }
         
         total_records <- total_records + nrow(df)
-        cat("✅ [", total_processed + 1, "/", length(extracted_dirs), "] ", 
+        cat(" [", total_processed + 1, "/", length(extracted_dirs), "] ", 
             folder_name, " - ", state, ": ", nrow(df), " records\n", sep = "")
       }
     }, error = function(e) {
-      cat("⚠️  Error processing", txt_file, ":", e$message, "\n")
+      cat("  Error processing", txt_file, ":", e$message, "\n")
       total_skipped <<- total_skipped + 1
     })
   }
@@ -198,7 +198,7 @@ for (extract_dir in extracted_dirs) {
 
 cat("\n")
 cat("==================================================\n")
-cat("📊 Processing Summary\n")
+cat(" Processing Summary\n")
 cat("==================================================\n")
 cat("Folders processed:", total_processed, "\n")
 cat("Total records inserted:", total_records, "\n")
@@ -207,17 +207,17 @@ cat("\n")
 
 # Show database stats
 total_db_records <- DBI::dbGetQuery(con, paste0("SELECT COUNT(*) as count FROM ", table_name))$count
-cat("📈 Total records in database:", total_db_records, "\n")
+cat("� Total records in database:", total_db_records, "\n")
 
 unique_dates <- DBI::dbGetQuery(con, paste0("SELECT COUNT(DISTINCT date) as count FROM ", table_name))$count
-cat("📅 Unique dates:", unique_dates, "\n")
+cat(" Unique dates:", unique_dates, "\n")
 
 unique_stations <- DBI::dbGetQuery(con, paste0("SELECT COUNT(DISTINCT station_name || postal_code) as count FROM ", table_name))$count
-cat("⛽ Unique stations:", unique_stations, "\n")
+cat("� Unique stations:", unique_stations, "\n")
 
 cat("\n")
 
 # Disconnect
 DBI::dbDisconnect(con, shutdown = TRUE)
-cat("✅ Parser completed successfully!\n")
+cat(" Parser completed successfully!\n")
 

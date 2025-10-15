@@ -9,7 +9,7 @@
 # 2. prices - Daily price data
 # 
 # Data source: https://dev.azure.com/tankerkoenig/tankerkoenig-data
-# ==================================================
+# ==================================================  
 
 library(DBI)
 library(duckdb)
@@ -24,7 +24,7 @@ stations_table <- "german_stations"
 prices_table <- "german_prices"
 
 cat("==================================================\n")
-cat("🇩🇪 Tankerkönig German Fuel Data Parser\n")
+cat("Tankerkönig German Fuel Data Parser\n")
 cat("==================================================\n\n")
 
 # ---------- Helper Functions ----------
@@ -35,12 +35,12 @@ connect_duckdb <- function() {
 
 create_stations_table <- function(table_name) {
   if (!DBI::dbIsValid(con)) {
-    cat("🔄 Reconnecting to DuckDB...\n")
+    cat("Reconnecting to DuckDB...\n")
     con <<- connect_duckdb()
   }
   
   if (!DBI::dbExistsTable(con, table_name)) {
-    cat("📋 Creating stations table:", table_name, "\n")
+    cat("Creating stations table:", table_name, "\n")
     DBI::dbExecute(con, paste0("
       CREATE TABLE ", table_name, " (
         uuid VARCHAR PRIMARY KEY,
@@ -56,20 +56,20 @@ create_stations_table <- function(table_name) {
         openingtimes_json VARCHAR
       )
     "))
-    cat("✅ Stations table created\n\n")
+    cat("Stations table created\n\n")
   } else {
-    cat("✅ Stations table already exists\n\n")
+    cat("Stations table already exists\n\n")
   }
 }
 
 create_prices_table <- function(table_name) {
   if (!DBI::dbIsValid(con)) {
-    cat("🔄 Reconnecting to DuckDB...\n")
+    cat("Reconnecting to DuckDB...\n")
     con <<- connect_duckdb()
   }
   
   if (!DBI::dbExistsTable(con, table_name)) {
-    cat("📋 Creating prices table:", table_name, "\n")
+    cat("Creating prices table:", table_name, "\n")
     DBI::dbExecute(con, paste0("
       CREATE TABLE ", table_name, " (
         date TIMESTAMP,
@@ -84,9 +84,9 @@ create_prices_table <- function(table_name) {
         PRIMARY KEY (date, station_uuid)
       )
     "))
-    cat("✅ Prices table created\n\n")
+    cat("Prices table created\n\n")
   } else {
-    cat("✅ Prices table already exists\n\n")
+    cat("Prices table already exists\n\n")
   }
 }
 
@@ -94,14 +94,14 @@ create_prices_table <- function(table_name) {
 
 # Connect to DuckDB
 con <- connect_duckdb()
-cat("📊 Connected to DuckDB:", db_path, "\n\n")
+cat("Connected to DuckDB:", db_path, "\n\n")
 
 # Create tables
 create_stations_table(stations_table)
 create_prices_table(prices_table)
 
 # ---------- Option 1: Load from master stations.csv ----------
-cat("🏪 Loading station data...\n")
+cat("Loading station data...\n")
 cat("Choose source: [1] Master stations.csv OR [2] Daily 2025 stations (with opening hours)\n")
 
 # For now, let's use the most recent daily station file (has opening hours)
@@ -111,7 +111,7 @@ latest_station_file <- fs::dir_ls(file.path(data_dir, "stations-2025"),
                        sort() %>% 
                        tail(1)
 
-cat("📍 Using:", basename(latest_station_file), "(includes opening hours)\n")
+cat("Using:", basename(latest_station_file), "(includes opening hours)\n")
 
 if (file.exists(latest_station_file)) {
   stations_data <- readr::read_csv(latest_station_file, 
@@ -130,31 +130,31 @@ if (file.exists(latest_station_file)) {
                                    ),
                                    show_col_types = FALSE)
   
-  cat("📍 Found", nrow(stations_data), "stations\n")
+  cat("Found", nrow(stations_data), "stations\n")
   
   # Bulk insert stations (much faster)
   if (!DBI::dbIsValid(con)) {
-    cat("🔄 Reconnecting to DuckDB...\n")
+    cat("Reconnecting to DuckDB...\n")
     con <<- connect_duckdb()
   }
   
-  DBI::dbWriteTable(con, stations_table, stations_data, append = TRUE, overwrite = FALSE)
+  DBI::dbWriteTable(con, stations_table, stations_data, append = FALSE, overwrite = TRUE)
   
-  cat("✅ All stations loaded!\n\n")
+  cat("All stations loaded!\n\n")
 } else {
-  cat("⚠️  Station file not found\n\n")
+  cat("Station file not found\n\n")
 }
 
 # ---------- Load 2025 Prices ----------
-cat("💰 Loading 2025 price data...\n")
+cat("Loading 2025 price data...\n")
 
 # Find all price CSV files in prices-2025 folder
 price_files <- fs::dir_ls(file.path(data_dir, "prices-2025"), 
                           recurse = TRUE, 
                           glob = "*.csv")
 
-cat("📁 Found", length(price_files), "price files to process\n")
-cat("⏱️  This will take 15-30 minutes for ~105 million records...\n\n")
+cat("Found", length(price_files), "price files to process\n")
+cat("This will take 15-30 minutes for ~105 million records...\n\n")
 
 total_processed <- 0
 total_records <- 0
@@ -182,7 +182,7 @@ for (price_file in price_files) {
     
     # Batch insert using DBI (much faster than row-by-row)
     if (!DBI::dbIsValid(con)) {
-      cat("🔄 Reconnecting to DuckDB...\n")
+      cat("Reconnecting to DuckDB...\n")
       con <<- connect_duckdb()
     }
     
@@ -204,18 +204,18 @@ for (price_file in price_files) {
     total_records <- total_records + nrow(price_data)
     total_processed <- total_processed + 1
     
-    cat("✅ [", total_processed, "/", length(price_files), "] ", 
+    cat("[", total_processed, "/", length(price_files), "] ", 
         file_name, ": ", format(nrow(price_data), big.mark = ","), " records (Total: ",
         format(total_records, big.mark = ","), ")\n", sep = "")
     
   }, error = function(e) {
-    cat("⚠️  Error processing", file_name, ":", e$message, "\n")
+    cat("Error processing", file_name, ":", e$message, "\n")
   })
 }
 
 cat("\n")
 cat("==================================================\n")
-cat("📊 Processing Summary\n")
+cat("Processing Summary\n")
 cat("==================================================\n")
 cat("Price files processed:", total_processed, "\n")
 cat("Total records inserted:", format(total_records, big.mark = ","), "\n")
@@ -223,18 +223,18 @@ cat("\n")
 
 # Show database stats
 total_stations <- DBI::dbGetQuery(con, paste0("SELECT COUNT(*) as count FROM ", stations_table))$count
-cat("📍 Total stations in database:", format(total_stations, big.mark = ","), "\n")
+cat("Total stations in database:", format(total_stations, big.mark = ","), "\n")
 
 total_prices <- DBI::dbGetQuery(con, paste0("SELECT COUNT(*) as count FROM ", prices_table))$count
-cat("💰 Total price records:", format(total_prices, big.mark = ","), "\n")
+cat("Total price records:", format(total_prices, big.mark = ","), "\n")
 
 unique_dates <- DBI::dbGetQuery(con, paste0("SELECT COUNT(DISTINCT DATE(date)) as count FROM ", prices_table))$count
-cat("📅 Unique dates:", unique_dates, "\n")
+cat("Unique dates:", unique_dates, "\n")
 
 cat("\n")
 
 # Sample query - cheapest diesel on latest date
-cat("🔍 Sample: Top 5 cheapest Diesel stations (latest date):\n")
+cat("Sample: Top 5 cheapest Diesel stations (latest date):\n")
 sample_data <- DBI::dbGetQuery(con, paste0("
   SELECT 
     p.diesel as price,
@@ -254,4 +254,4 @@ cat("\n")
 
 # Disconnect
 DBI::dbDisconnect(con, shutdown = TRUE)
-cat("✅ Parser completed successfully!\n")
+cat("Parser completed successfully!\n")

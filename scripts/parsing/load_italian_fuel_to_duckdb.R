@@ -15,7 +15,7 @@ library(fs)
 `%||%` <- function(x, y) if (is.null(x)) y else x
 
 cat("==================================================\n")
-cat("🇮🇹 Italian Fuel Data Parser (Fast Version)\n")
+cat("Italian Fuel Data Parser (Fast Version)\n")
 cat("==================================================\n\n")
 
 # ---------- Configuration ----------
@@ -28,7 +28,7 @@ con <- DBI::dbConnect(duckdb::duckdb(dbdir = path.expand(db_path)))
 
 # Create table with PRIMARY KEY
 if (!DBI::dbExistsTable(con, table_name)) {
-  cat("📋 Creating table:", table_name, "\n")
+  cat("Creating table:", table_name, "\n")
   DBI::dbExecute(con, paste0("
     CREATE TABLE ", table_name, " (
       station_id INTEGER,
@@ -50,15 +50,15 @@ if (!DBI::dbExistsTable(con, table_name)) {
       PRIMARY KEY (station_id, fuel_id, insert_date, file_source)
     )
   "))
-  cat("✅ Table created\n\n")
+  cat("Table created\n\n")
 } else {
-  cat("✅ Table already exists\n\n")
+  cat("Table already exists\n\n")
 }
 
 # ---------- Find Files ----------
 fuel_files <- fs::dir_ls(path.expand(json_dir), regexp = "fuel_region-.*\\.json(\\.gz)?$")
 
-cat("📁 Found", length(fuel_files), "files to process\n")
+cat("Found", length(fuel_files), "files to process\n")
 cat("🚀 Using FAST bulk loading method\n\n")
 
 total_files <- 0
@@ -126,19 +126,19 @@ for (file in fuel_files) {
       total_records <- total_records + nrow(df)
       total_files <- total_files + 1
       
-      cat("✅ [", total_files, "/", length(fuel_files), "] ", current_file, 
+      cat("[", total_files, "/", length(fuel_files), "] ", current_file, 
           ": ", format(nrow(df), big.mark = ","), " records (Total: ",
           format(total_records, big.mark = ","), ")\n", sep = "")
     }
     
   }, error = function(e) {
-    cat("⚠️  Error processing", basename(file), ":", e$message, "\n")
+    cat("Error processing", basename(file), ":", e$message, "\n")
   })
 }
 
 cat("\n")
 cat("==================================================\n")
-cat("📊 Processing Summary\n")
+cat("Processing Summary\n")
 cat("==================================================\n")
 cat("Files processed:", total_files, "\n")
 cat("Total records inserted:", format(total_records, big.mark = ","), "\n\n")
@@ -148,14 +148,14 @@ final_count <- DBI::dbGetQuery(con, paste0("SELECT COUNT(*) as count FROM ", tab
 cat("📈 Total records in database:", format(final_count, big.mark = ","), "\n")
 
 unique_stations <- DBI::dbGetQuery(con, paste0("SELECT COUNT(DISTINCT station_id) as count FROM ", table_name))$count
-cat("🏪 Unique stations:", format(unique_stations, big.mark = ","), "\n")
+cat("Unique stations:", format(unique_stations, big.mark = ","), "\n")
 
 unique_dates <- DBI::dbGetQuery(con, paste0("SELECT COUNT(DISTINCT insert_date) as count FROM ", table_name))$count
-cat("📅 Unique dates:", unique_dates, "\n")
+cat("Unique dates:", unique_dates, "\n")
 
 cat("\n")
 
 # Disconnect
 DBI::dbDisconnect(con, shutdown = TRUE)
-cat("✅ Parser completed successfully!\n")
+cat("Parser completed successfully!\n")
 

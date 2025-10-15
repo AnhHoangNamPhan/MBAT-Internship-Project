@@ -157,13 +157,13 @@ on.exit({
 create_table_if_not_exists <- function(table_name) {
   # Check connection validity first
   if (!DBI::dbIsValid(con)) {
-    cat("🔄 Reconnecting to DuckDB...\n")
+    cat(" Reconnecting to DuckDB...\n")
     con <<- connect_duckdb()
   }
   
   # Check if table exists
   if (!DBI::dbExistsTable(con, table_name)) {
-    cat("📋 Creating table:", table_name, "\n")
+    cat(" Creating table:", table_name, "\n")
     
     # Create table with proper schema
     create_sql <- paste0("
@@ -212,9 +212,9 @@ create_table_if_not_exists <- function(table_name) {
     ")
     
     DBI::dbExecute(con, create_sql)
-    cat("✅ Table created successfully\n")
+    cat(" Table created successfully\n")
   } else {
-    cat("📋 Table", table_name, "already exists\n")
+    cat(" Table", table_name, "already exists\n")
   }
 }
 
@@ -236,27 +236,27 @@ processed_files <- 0
 failed_files <- 0
 
 for (file in efuel_files) {
-  cat("\n📄 Processing:", basename(file), "\n")
+  cat("\n Processing:", basename(file), "\n")
   
   # Read and validate JSON
   raw <- try(jsonlite::fromJSON(file, simplifyVector = FALSE), silent = TRUE)
   
   if (inherits(raw, "try-error")) {
-    cat("⚠️ Failed to read JSON:", basename(file), "\n")
+    cat(" Failed to read JSON:", basename(file), "\n")
     failed_files <- failed_files + 1
     next
   }
   
   # Check for error responses (like "Bad Request")
   if (!is.null(raw$status) && raw$status >= 400) {
-    cat("⚠️ API error in file:", basename(file), "-", raw$detail %or% "Unknown error", "\n")
+    cat(" API error in file:", basename(file), "-", raw$detail %or% "Unknown error", "\n")
     failed_files <- failed_files + 1
     next
   }
   
   # Validate structure
   if (is.null(raw$results) || length(raw$results) == 0) {
-    cat("⚠️ No results found in:", basename(file), "\n")
+    cat(" No results found in:", basename(file), "\n")
     failed_files <- failed_files + 1
     next
   }
@@ -348,7 +348,7 @@ for (file in efuel_files) {
   if (nrow(df) > 0) {
     # Check connection validity
     if (!DBI::dbIsValid(con)) {
-      cat("🔄 Reconnecting to DuckDB...\n")
+      cat(" Reconnecting to DuckDB...\n")
       con <<- connect_duckdb()
     }
     
@@ -357,7 +357,7 @@ for (file in efuel_files) {
     for (i in 1:nrow(df)) {
       # Check connection validity before each query
       if (!DBI::dbIsValid(con)) {
-        cat("🔄 Reconnecting to DuckDB...\n")
+        cat(" Reconnecting to DuckDB...\n")
         con <<- connect_duckdb()
       }
       
@@ -373,41 +373,41 @@ for (file in efuel_files) {
     }
     
     if (duplicate_count > 0) {
-      cat("🔄 Found", duplicate_count, "existing rows, updating...\n")
+      cat(" Found", duplicate_count, "existing rows, updating...\n")
     }
     
     # Write data (DuckDB will handle duplicates with PRIMARY KEY constraint)
     DBI::dbWriteTable(con, table_name, df, append = TRUE)
-    cat("✅ Written", nrow(df), "rows to", table_name, "\n")
+    cat(" Written", nrow(df), "rows to", table_name, "\n")
     total_rows <- total_rows + nrow(df)
     processed_files <- processed_files + 1
   } else {
-    cat("⚠️ No data to write from:", basename(file), "\n")
+    cat(" No data to write from:", basename(file), "\n")
     failed_files <- failed_files + 1
   }
 }
 
 # ---------- Summary ----------
 cat("\n", paste(rep("=", 50), collapse=""), "\n")
-cat("📊 E-FUEL PROCESSING SUMMARY\n")
+cat(" E-FUEL PROCESSING SUMMARY\n")
 cat(paste(rep("=", 50), collapse=""), "\n")
-cat("✅ Successfully processed:", processed_files, "files\n")
-cat("⚠️ Failed files:", failed_files, "\n")
-cat("📈 Total rows written:", total_rows, "\n")
-cat("💾 Database location:", db_path, "\n")
-cat("📋 Table name:", table_name, "\n")
+cat(" Successfully processed:", processed_files, "files\n")
+cat(" Failed files:", failed_files, "\n")
+cat("� Total rows written:", total_rows, "\n")
+cat("� Database location:", db_path, "\n")
+cat(" Table name:", table_name, "\n")
 
 # ---------- Verify Data ----------
 if (DBI::dbIsValid(con)) {
   try({
     count_query <- paste("SELECT COUNT(*) as total_rows FROM", table_name)
     result <- DBI::dbGetQuery(con, count_query)
-    cat("🔍 Total rows in database:", result$total_rows, "\n")
+    cat(" Total rows in database:", result$total_rows, "\n")
     
     # Show charging capacity distribution
     capacity_query <- paste("SELECT 
       CASE 
-        WHEN max_capacity_kw <= 3 THEN 'Low (≤3kW)'
+        WHEN max_capacity_kw <= 3 THEN 'Low (��3kW)'
         WHEN max_capacity_kw <= 11 THEN 'Medium (4-11kW)'
         WHEN max_capacity_kw <= 22 THEN 'High (12-22kW)'
         ELSE 'Very High (>22kW)'
@@ -419,7 +419,7 @@ if (DBI::dbIsValid(con)) {
       ORDER BY count DESC")
     capacity_dist <- DBI::dbGetQuery(con, capacity_query)
     if (nrow(capacity_dist) > 0) {
-      cat("\n⚡ Charging capacity distribution:\n")
+      cat("\n� Charging capacity distribution:\n")
       print(capacity_dist)
     }
     
@@ -428,7 +428,7 @@ if (DBI::dbIsValid(con)) {
                         "WHERE cost_types IS NOT NULL GROUP BY cost_types ORDER BY count DESC")
     cost_dist <- DBI::dbGetQuery(con, cost_query)
     if (nrow(cost_dist) > 0) {
-      cat("\n💰 Cost types:\n")
+      cat("\n Cost types:\n")
       print(cost_dist)
     }
     
@@ -437,7 +437,7 @@ if (DBI::dbIsValid(con)) {
                         "WHERE plug_types IS NOT NULL GROUP BY plug_types ORDER BY count DESC LIMIT 10")
     plug_dist <- DBI::dbGetQuery(con, plug_query)
     if (nrow(plug_dist) > 0) {
-      cat("\n🔌 Top plug types:\n")
+      cat("\n� Top plug types:\n")
       print(plug_dist)
     }
     
@@ -450,7 +450,7 @@ if (DBI::dbIsValid(con)) {
       FROM", table_name)
     char_stats <- DBI::dbGetQuery(con, char_query)
     if (nrow(char_stats) > 0) {
-      cat("\n🏢 Station characteristics:\n")
+      cat("\n� Station characteristics:\n")
       print(char_stats)
     }
     
@@ -458,7 +458,7 @@ if (DBI::dbIsValid(con)) {
     coords_query <- paste("SELECT COUNT(*) as with_coords FROM", table_name, 
                           "WHERE latitude IS NOT NULL AND longitude IS NOT NULL")
     coords_result <- DBI::dbGetQuery(con, coords_query)
-    cat("\n📍 Stations with coordinates:", coords_result$with_coords, "\n")
+    cat("\n Stations with coordinates:", coords_result$with_coords, "\n")
     
     # Show price statistics
     price_query <- paste("SELECT 
@@ -470,11 +470,11 @@ if (DBI::dbIsValid(con)) {
                          "WHERE price_per_kwh IS NOT NULL")
     price_stats <- DBI::dbGetQuery(con, price_query)
     if (nrow(price_stats) > 0) {
-      cat("\n💵 Price statistics:\n")
+      cat("\n� Price statistics:\n")
       print(price_stats)
     }
     
   }, silent = TRUE)
 }
 
-cat("\n✅ Comprehensive e-fuel data parsing completed!\n")
+cat("\n Comprehensive e-fuel data parsing completed!\n")
