@@ -102,7 +102,7 @@ extract_services <- function(facilities) {
 }
 
 # ---------- Configuration ----------
-json_dir   <- "~/Desktop/MBAT-Internship-Project/scraped_data/data_alt"
+json_dir   <- "~/Desktop/MBAT-Internship-Project/scraped_data/tankerkaiser-data/data_oeamtc_extracted"
 db_path    <- "~/Desktop/MBAT-Internship-Project/databases/oeamtc_fuel_data.duckdb"
 table_name <- "oeamtc_fuel"
 
@@ -260,37 +260,41 @@ for (file in fuel_files) {
       # No prices - return station info only
       return(tibble(
         # Station identifiers
-        id                   = station_id,
-        name                 = station_name,
+        station_id           = station_id,
+        station_name         = station_name,
+        station_address      = NA_character_,
+        station_brand        = company_name,
+        station_operator     = branch_name,
+        station_phone        = phone,
+        station_website      = url,
+        station_email        = NA_character_,
+        station_facilities   = NA_character_,
+        station_services     = services,
+        station_opening_hours = opening_hours,
+        station_operation_modes = NA_character_,
+        station_payment_methods = payment_options,
+        station_roaming_available = NA,
+        station_green_energy = NA,
+        station_free_parking = NA,
+        station_active       = NA,
+        station_oeamtc_epower_station = NA,
         
         # Price information
         fuel_type            = NA_character_,
-        price                = NA_real_,
-        unit                 = NA_character_,
-        price_last_updated   = NA_character_,
+        fuel_price           = NA_real_,
+        fuel_unit            = NA_character_,
+        fuel_last_updated    = NA_character_,
         fuel_source          = NA_character_,
         
         # Station metadata
-        station_last_updated = station_last_updated,
         manually_approved    = manually_approved,
         last_imported        = last_imported,
         last_imported_human  = last_imported_human,
         entry_etag          = entry_etag,
         
-        # Operator information
-        company_name         = company_name,
-        branch_name          = branch_name,
-        phone                = phone,
-        url                  = url,
-        
         # Location
-        latitude             = lat,
-        longitude            = lon,
-        
-        # Facilities and services
-        payment_options      = payment_options,
-        services             = services,
-        opening_hours        = opening_hours,
+        station_lat          = lat,
+        station_lng          = lon,
         
         # File source
         file_source          = basename(file)
@@ -305,37 +309,41 @@ for (file in fuel_files) {
       purrr::map_dfr(inner_prices, function(p) {
         tibble(
           # Station identifiers
-          id                   = station_id,
-          name                 = station_name,
+          station_id           = station_id,
+          station_name         = station_name,
+          station_address      = NA_character_,
+          station_brand        = company_name,
+          station_operator     = branch_name,
+          station_phone        = phone,
+          station_website      = url,
+          station_email        = NA_character_,
+          station_facilities   = NA_character_,
+          station_services     = services,
+          station_opening_hours = opening_hours,
+          station_operation_modes = NA_character_,
+          station_payment_methods = payment_options,
+          station_roaming_available = NA,
+          station_green_energy = NA,
+          station_free_parking = NA,
+          station_active       = NA,
+          station_oeamtc_epower_station = NA,
           
           # Price information
           fuel_type            = p$fuel %or% NA_character_,
-          price                = safe_as_numeric(p$price),
-          unit                 = p$unit %or% NA_character_,
-          price_last_updated   = p$lastUpdated %or% NA_character_,
+          fuel_price           = safe_as_numeric(p$price),
+          fuel_unit            = p$unit %or% NA_character_,
+          fuel_last_updated    = p$lastUpdated %or% NA_character_,
           fuel_source          = p$fuelSource %or% NA_character_,
           
           # Station metadata
-          station_last_updated = station_last_updated,
           manually_approved    = manually_approved,
           last_imported        = last_imported,
           last_imported_human  = last_imported_human,
           entry_etag          = entry_etag,
           
-          # Operator information
-          company_name         = company_name,
-          branch_name          = branch_name,
-          phone                = phone,
-          url                  = url,
-          
           # Location
-          latitude             = lat,
-          longitude            = lon,
-          
-          # Facilities and services
-          payment_options      = payment_options,
-          services             = services,
-          opening_hours        = opening_hours,
+          station_lat          = lat,
+          station_lng          = lon,
           
           # File source
           file_source          = basename(file)

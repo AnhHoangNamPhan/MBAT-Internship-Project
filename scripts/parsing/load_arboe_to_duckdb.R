@@ -10,7 +10,7 @@ library(purrr)
 `%||%` <- function(a, b) if (!is.null(a)) a else b
 
 # ---------- paths ----------
-geojson_dir <- "~/Desktop/MBAT-Internship-Project/data"
+geojson_dir <- "~/Desktop/MBAT-Internship-Project/scraped_data/tankerkaiser-data/data_arboe_extracted/data"
 db_path     <- "~/Desktop/MBAT-Internship-Project/databases/arboe_fuel_prices.duckdb"
 table_name  <- "arboe_prices"
 

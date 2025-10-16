@@ -17,17 +17,13 @@ library(readr)
 library(dplyr)
 library(fs)
 
-# ---------- Configuration ----------
+# Configuration
 db_path <- '/Users/alexphan/Desktop/MBAT-Internship-Project/databases/german_fuel_data.duckdb'
 data_dir <- '/Users/alexphan/Desktop/MBAT-Internship-Project/scraped_data/tankerkoenig-data'
 stations_table <- "german_stations"
 prices_table <- "german_prices"
 
-cat("==================================================\n")
-cat("Tankerkönig German Fuel Data Parser\n")
-cat("==================================================\n\n")
-
-# ---------- Helper Functions ----------
+# Helper Functions
 
 connect_duckdb <- function() {
   DBI::dbConnect(duckdb::duckdb(), dbdir = db_path)
@@ -90,7 +86,7 @@ create_prices_table <- function(table_name) {
   }
 }
 
-# ---------- Main Processing ----------
+# Main Processing
 
 # Connect to DuckDB
 con <- connect_duckdb()
@@ -100,7 +96,7 @@ cat("Connected to DuckDB:", db_path, "\n\n")
 create_stations_table(stations_table)
 create_prices_table(prices_table)
 
-# ---------- Option 1: Load from master stations.csv ----------
+# Option 1: Load from master stations.csv
 cat("Loading station data...\n")
 cat("Choose source: [1] Master stations.csv OR [2] Daily 2025 stations (with opening hours)\n")
 
@@ -154,7 +150,6 @@ price_files <- fs::dir_ls(file.path(data_dir, "prices-2025"),
                           glob = "*.csv")
 
 cat("Found", length(price_files), "price files to process\n")
-cat("This will take 15-30 minutes for ~105 million records...\n\n")
 
 total_processed <- 0
 total_records <- 0

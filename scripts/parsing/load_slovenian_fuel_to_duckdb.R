@@ -89,7 +89,7 @@ create_table_if_not_exists <- function(table_name) {
     DBI::dbExecute(con, create_sql)
     cat(" Table created successfully\n")
   } else {
-    cat("˜‘ Table", table_name, "already exists\n")
+    cat("ï¿½ï¿½ Table", table_name, "already exists\n")
   }
 }
 
@@ -104,7 +104,7 @@ if (length(json_files) == 0) {
 }
 
 cat("\n", paste(rep("=", 50), collapse=""), "\n")
-cat("€ Starting Slovenian Fuel Data Parsing and Loading\n")
+cat("ï¿½ Starting Slovenian Fuel Data Parsing and Loading\n")
 cat(paste(rep("=", 50), collapse=""), "\n\n")
 
 total_rows <- 0
@@ -123,7 +123,7 @@ for (file in json_files) {
   raw <- try(jsonlite::fromJSON(file, simplifyVector = FALSE), silent = TRUE)
 
   if (inherits(raw, "try-error") || is.null(raw$results)) {
-    cat("Œ Error reading or parsing JSON from", basename(file), "\n")
+    cat("ï¿½ï¿½ Error reading or parsing JSON from", basename(file), "\n")
     failed_files <- failed_files + 1
     next
   }
@@ -188,19 +188,19 @@ for (file in json_files) {
       for (i in 1:nrow(df)) {
         row <- df[i, ]
         insert_sql <- paste0("
-          INSERT OR REPLACE INTO ", table_name, " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT OR REPLACE INTO ", table_name, " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ")
         DBI::dbExecute(con, insert_sql, params = list(
-          row$station_id, row$station_name, row$station_address, row$franchise_id,
-          row$station_lat, row$station_lng, row$zip_code, row$direction, row$open_hours,
-          NA_real_, row$fuel_type, row$fuel_price, row$page_number, row$file_source
+          row$station_id, row$franchise_id, row$station_name, row$station_address,
+          row$station_lat, row$station_lng, row$fuel_type, row$fuel_price,
+          row$zip_code, row$direction, row$open_hours, row$page_number, row$file_source
         ))
       }
       cat(" Written", nrow(df), "rows to", table_name, "\n")
       total_rows <- total_rows + nrow(df)
       processed_files <- processed_files + 1
     }, error = function(e) {
-      cat("Œ Error writing to database for", basename(file), ":", e$message, "\n")
+      cat("ï¿½ï¿½ Error writing to database for", basename(file), ":", e$message, "\n")
       failed_files <- failed_files + 1
     })
   } else {
@@ -212,12 +212,12 @@ cat("\n", paste(rep("=", 50), collapse=""), "\n")
 cat(" PROCESSING SUMMARY\n")
 cat(paste(rep("=", 50), collapse=""), "\n")
 cat(" Files processed successfully:", processed_files, "\n")
-cat("Œ Files failed:", failed_files, "\n")
+cat("ï¿½ï¿½ Files failed:", failed_files, "\n")
 cat(" Total files:", length(json_files), "\n")
 cat(" Total rows written:", total_rows, "\n")
 
 # Optional: Query some statistics
-cat("\nˆ Price statistics for Slovenian fuel:\n")
+cat("\nï¿½ Price statistics for Slovenian fuel:\n")
 price_query <- paste0("
   SELECT
     fuel_type,
