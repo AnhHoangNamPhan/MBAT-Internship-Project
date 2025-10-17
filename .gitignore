@@ -53,3 +53,4 @@ cache_shell_italia/
 # Large model files (keep small ones, ignore large ones)
 *.rds
 !analysis/linear_regression/diesel_linear_regression_model.rds
+databases/unified_fuel_data.duckdb
