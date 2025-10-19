@@ -1,18 +1,8 @@
 #!/usr/bin/env Rscript
 
-# Create Unified Multi-Country Fuel Price Dataset
+# Create Unified Multi-Country Fuel Price Dataset - Direct CSV Export
 # Combines fuel price data from Germany, Austria, Italy, and Slovenia
-# 
-# Uses DuckDB's ATTACH and INSERT INTO ... SELECT for efficient data loading
-# (no data transfer through R memory, much faster!)
-#
-# FUEL TYPE CATEGORIZATION (4 categories):
-# - diesel: Regular diesel
-# - diesel_premium: Premium diesel (HVO, Blue Diesel, diesel_plus, maxxmotion_diesel, dizel-premium)
-# - gasoline_95: Regular gasoline (95 octane, E5, E10)
-# - gasoline_98: Premium gasoline (98+ octane, Super Plus, 100 octane)
-#
-# See info/brand_categorization_reference.md for detailed categorization logic
+# Exports directly to CSV without creating heavy unified database
 
 library(DBI)
 library(duckdb)
@@ -22,7 +12,7 @@ if (!grepl("MBAT-Internship-Project$", getwd())) {
   setwd("../../")
 }
 
-# Database paths (relative paths for ATTACH)
+# Database paths
 german_db <- "databases/german_fuel_data.duckdb"
 arboe_db <- "databases/arboe_fuel_prices.duckdb"
 oeamtc_fuel_db <- "databases/oeamtc_fuel_data.duckdb"
@@ -31,19 +21,31 @@ omv_db <- "databases/omv_austria_fuel_data.duckdb"
 italian_db <- "databases/italian_fuel_data.duckdb"
 slovenian_db <- "databases/slovenian_fuel_data.duckdb"
 
-# Output database
-unified_db <- "databases/unified_fuel_data.duckdb"
+# Output CSV path
+csv_path <- "data/unified_fuel_prices.csv"
 
 cat("Creating unified multi-country fuel price dataset\n")
-cat("Using DuckDB ATTACH for efficient data loading\n")
+cat("Direct CSV export (no database creation)\n")
 cat("===============================================\n\n")
 
-# Connect to output database
-con <- dbConnect(duckdb(), unified_db)
+# Create temporary database for processing
+temp_db <- ":memory:"
+con <- dbConnect(duckdb(), temp_db)
 
-# Create main unified table with raw data only (no feature engineering)
+# Set DuckDB memory limits to handle large datasets
+dbExecute(con, "SET memory_limit='20GB'")
+dbExecute(con, "SET max_temp_directory_size='40GB'")
+dbExecute(con, "SET threads=6")
+dbExecute(con, "SET preserve_insertion_order=false")
+
+cat("DuckDB settings configured:\n")
+cat("  Memory limit: 20GB\n")
+cat("  Max temp directory: 40GB\n")
+cat("  Threads: 6\n\n")
+
+# Create temporary table
 dbExecute(con, "
-  CREATE OR REPLACE TABLE unified_fuel_data (
+  CREATE TABLE unified_fuel_data (
     country VARCHAR,
     station_id VARCHAR,
     station_name VARCHAR,
@@ -60,10 +62,10 @@ dbExecute(con, "
   )
 ")
 
-cat("Loading data from all sources using direct SQL...\n\n")
+cat("Loading data from all sources...\n\n")
 
-# 1. German Data (Tankerkönig) - August 2024 to July 2025
-cat("1. Loading German data (August 2024 - July 2025)...\n")
+# 1. German Data
+cat("1. Loading German data...\n")
 dbExecute(con, sprintf("ATTACH '%s' AS german_db (READ_ONLY)", german_db))
 
 # Load German data in monthly chunks
@@ -89,9 +91,9 @@ for (i in seq_along(month_ranges)) {
   
   cat("  Loading", month_label, "...\n")
   
-  dbExecute(con, sprintf("
+  dbExecute(con, paste0("
     INSERT INTO unified_fuel_data
-    SELECT 
+    SELECT
       'Germany' as country,
       p.station_uuid as station_id,
       s.name as station_name,
@@ -110,11 +112,11 @@ for (i in seq_along(month_ranges)) {
     WHERE p.diesel > 0 AND p.diesel < 10
       AND s.latitude IS NOT NULL AND s.longitude IS NOT NULL
       AND s.latitude BETWEEN 47 AND 55 AND s.longitude BETWEEN 5 AND 15
-      AND p.date >= '%s' AND p.date < '%s'
+      AND p.date >= '", start_date, "' AND p.date < '", end_date, "'
     
     UNION ALL
     
-    SELECT 
+    SELECT
       'Germany' as country,
       p.station_uuid as station_id,
       s.name as station_name,
@@ -133,11 +135,11 @@ for (i in seq_along(month_ranges)) {
     WHERE p.e5 > 0 AND p.e5 < 10
       AND s.latitude IS NOT NULL AND s.longitude IS NOT NULL
       AND s.latitude BETWEEN 47 AND 55 AND s.longitude BETWEEN 5 AND 15
-      AND p.date >= '%s' AND p.date < '%s'
+      AND p.date >= '", start_date, "' AND p.date < '", end_date, "'
     
     UNION ALL
     
-    SELECT 
+    SELECT
       'Germany' as country,
       p.station_uuid as station_id,
       s.name as station_name,
@@ -156,121 +158,25 @@ for (i in seq_along(month_ranges)) {
     WHERE p.e10 > 0 AND p.e10 < 10
       AND s.latitude IS NOT NULL AND s.longitude IS NOT NULL
       AND s.latitude BETWEEN 47 AND 55 AND s.longitude BETWEEN 5 AND 15
-      AND p.date >= '%s' AND p.date < '%s'
-  ", start_date, end_date, start_date, end_date, start_date, end_date))
+      AND p.date >= '", start_date, "' AND p.date < '", end_date, "'
+  "))
   
-  # Get count for this month
-  count <- dbGetQuery(con, sprintf("
+  # Check progress
+  count <- dbGetQuery(con, paste0("
     SELECT COUNT(*) as count 
     FROM unified_fuel_data 
-    WHERE country = 'Germany' AND date_raw >= '%s' AND date_raw < '%s'
-  ", start_date, end_date))$count
-  
+    WHERE country = 'Germany' 
+      AND date_raw >= '", start_date, "' 
+      AND date_raw < '", end_date, "'
+  "))$count
   cat("    Records:", format(count, big.mark = ","), "\n")
 }
 
 dbExecute(con, "DETACH german_db")
 cat("✓ German data loaded\n\n")
 
-# 2. Austrian ARBÖ Data
-cat("2. Loading Austrian ARBÖ data...\n")
-dbExecute(con, sprintf("ATTACH '%s' AS arboe_db (READ_ONLY)", arboe_db))
-
-dbExecute(con, "
-  INSERT INTO unified_fuel_data
-  SELECT 
-    'Austria' as country,
-    id as station_id,
-    name as station_name,
-    lat as latitude,
-    lon as longitude,
-    city,
-    bundesland as state_region,
-    CASE 
-      WHEN name LIKE '%OMV%' THEN 'OMV'
-      WHEN name LIKE '%Shell%' THEN 'Shell'
-      WHEN name LIKE '%BP%' THEN 'BP'
-      WHEN name LIKE '%JET%' THEN 'JET'
-      WHEN name LIKE '%AVIA%' THEN 'AVIA'
-      WHEN name LIKE '%ENI%' THEN 'ENI'
-      ELSE 'Unknown'
-    END as brand,
-    'diesel' as fuel_type,
-    fuel_d as price,
-    CAST(date || ' ' || time AS VARCHAR) as date_raw,
-    'ARBÖ' as data_source,
-    NULL as file_source
-  FROM arboe_db.arboe_prices
-  WHERE fuel_d > 0 AND fuel_d < 10
-    AND lat IS NOT NULL AND lon IS NOT NULL
-    AND lat BETWEEN 46 AND 49 AND lon BETWEEN 9 AND 17
-    AND date >= '2024-01-01'
-  
-  UNION ALL
-  
-  SELECT 
-    'Austria' as country,
-    id as station_id,
-    name as station_name,
-    lat as latitude,
-    lon as longitude,
-    city,
-    bundesland as state_region,
-    CASE 
-      WHEN name LIKE '%OMV%' THEN 'OMV'
-      WHEN name LIKE '%Shell%' THEN 'Shell'
-      WHEN name LIKE '%BP%' THEN 'BP'
-      WHEN name LIKE '%JET%' THEN 'JET'
-      WHEN name LIKE '%AVIA%' THEN 'AVIA'
-      WHEN name LIKE '%ENI%' THEN 'ENI'
-      ELSE 'Unknown'
-    END as brand,
-    'gasoline_95' as fuel_type,
-    fuel_s95 as price,
-    CAST(date || ' ' || time AS VARCHAR) as date_raw,
-    'ARBÖ' as data_source,
-    NULL as file_source
-  FROM arboe_db.arboe_prices
-  WHERE fuel_s95 > 0 AND fuel_s95 < 10
-    AND lat IS NOT NULL AND lon IS NOT NULL
-    AND lat BETWEEN 46 AND 49 AND lon BETWEEN 9 AND 17
-    AND date >= '2024-01-01'
-  
-  UNION ALL
-  
-  SELECT 
-    'Austria' as country,
-    id as station_id,
-    name as station_name,
-    lat as latitude,
-    lon as longitude,
-    city,
-    bundesland as state_region,
-    CASE 
-      WHEN name LIKE '%OMV%' THEN 'OMV'
-      WHEN name LIKE '%Shell%' THEN 'Shell'
-      WHEN name LIKE '%BP%' THEN 'BP'
-      WHEN name LIKE '%JET%' THEN 'JET'
-      WHEN name LIKE '%AVIA%' THEN 'AVIA'
-      WHEN name LIKE '%ENI%' THEN 'ENI'
-      ELSE 'Unknown'
-    END as brand,
-    'gasoline_98' as fuel_type,
-    fuel_s98 as price,
-    CAST(date || ' ' || time AS VARCHAR) as date_raw,
-    'ARBÖ' as data_source,
-    NULL as file_source
-  FROM arboe_db.arboe_prices
-  WHERE fuel_s98 > 0 AND fuel_s98 < 10
-    AND lat IS NOT NULL AND lon IS NOT NULL
-    AND lat BETWEEN 46 AND 49 AND lon BETWEEN 9 AND 17
-    AND date >= '2024-01-01'
-")
-
-arboe_count <- dbGetQuery(con, "SELECT COUNT(*) as count FROM unified_fuel_data WHERE data_source = 'ARBÖ'")$count
-cat("  Records:", format(arboe_count, big.mark = ","), "\n")
-dbExecute(con, "DETACH arboe_db")
-cat("✓ ARBÖ data loaded\n\n")
+# 2. Austrian ARBÖ Data - SKIPPED (database deleted)
+cat("2. Austrian ARBÖ data: SKIPPED (database deleted)\n")
 
 # 3. Austrian ÖAMTC Data
 cat("3. Loading Austrian ÖAMTC data...\n")
@@ -278,44 +184,37 @@ dbExecute(con, sprintf("ATTACH '%s' AS oeamtc_db (READ_ONLY)", oeamtc_fuel_db))
 
 dbExecute(con, "
   INSERT INTO unified_fuel_data
-  SELECT 
+  SELECT
     'Austria' as country,
     station_id,
     station_name,
     station_lat as latitude,
     station_lng as longitude,
-    NULL as city,
+    LEFT(station_address, POSITION(',' IN station_address) - 1) as city,
     NULL as state_region,
     station_brand as brand,
-    CASE 
-      WHEN fuel_type = 'DIESEL' THEN 'diesel'
-      WHEN fuel_type = 'GASOLINE_SUPER' THEN 'gasoline_95'
-      WHEN fuel_type = 'GASOLINE_PREMIUM' THEN 'gasoline_98'
-      ELSE fuel_type
-    END as fuel_type,
+    fuel_type,
     fuel_price as price,
-    CAST(last_imported AS VARCHAR) as date_raw,
+    fuel_last_updated as date_raw,
     'ÖAMTC' as data_source,
-    NULL as file_source
+    file_source
   FROM oeamtc_db.oeamtc_fuel
   WHERE fuel_price > 0 AND fuel_price < 10
     AND station_lat IS NOT NULL AND station_lng IS NOT NULL
-    AND station_lat BETWEEN 46 AND 49 AND station_lng BETWEEN 9 AND 17
-    AND last_imported >= '2024-01-01'
+    AND station_lat BETWEEN 45 AND 50 AND station_lng BETWEEN 9 AND 18
 ")
 
-oeamtc_count <- dbGetQuery(con, "SELECT COUNT(*) as count FROM unified_fuel_data WHERE data_source = 'ÖAMTC'")$count
-cat("  Records:", format(oeamtc_count, big.mark = ","), "\n")
+oeamtc_count <- dbGetQuery(con, "SELECT COUNT(*) as count FROM unified_fuel_data WHERE country = 'Austria' AND data_source = 'ÖAMTC'")$count
+cat("  ÖAMTC records:", format(oeamtc_count, big.mark = ","), "\n")
 dbExecute(con, "DETACH oeamtc_db")
-cat("✓ ÖAMTC data loaded\n\n")
 
-# 4. Austrian Jet Data
-cat("4. Loading Austrian Jet data...\n")
+# 4. Austrian JET Data
+cat("4. Loading Austrian JET data...\n")
 dbExecute(con, sprintf("ATTACH '%s' AS jet_db (READ_ONLY)", jet_db))
 
 dbExecute(con, "
   INSERT INTO unified_fuel_data
-  SELECT 
+  SELECT
     'Austria' as country,
     station_id,
     station_name,
@@ -324,35 +223,28 @@ dbExecute(con, "
     city,
     NULL as state_region,
     'JET' as brand,
-    CASE 
-      WHEN fuel_type = 'Diesel' THEN 'diesel'
-      WHEN fuel_type = 'Super' THEN 'gasoline_95'
-      WHEN fuel_type = 'Super Plus' THEN 'gasoline_98'
-      ELSE fuel_type
-    END as fuel_type,
-    fuel_price as price,
-    CAST(file_date AS VARCHAR) as date_raw,
+    fuel_type,
+    price,
+    CAST(date AS VARCHAR) as date_raw,
     'Jet Austria' as data_source,
-    NULL as file_source
+    file_source
   FROM jet_db.jet_austria_fuel
-  WHERE fuel_price > 0 AND fuel_price < 10
+  WHERE price > 0 AND price < 10
     AND lat IS NOT NULL AND lng IS NOT NULL
-    AND lat BETWEEN 46 AND 49 AND lng BETWEEN 9 AND 17
-    AND file_date >= '2024-01-01'
+    AND lat BETWEEN 45 AND 50 AND lng BETWEEN 9 AND 18
 ")
 
-jet_count <- dbGetQuery(con, "SELECT COUNT(*) as count FROM unified_fuel_data WHERE data_source = 'Jet Austria'")$count
-cat("  Records:", format(jet_count, big.mark = ","), "\n")
+jet_count <- dbGetQuery(con, "SELECT COUNT(*) as count FROM unified_fuel_data WHERE country = 'Austria' AND data_source = 'Jet Austria'")$count
+cat("  JET records:", format(jet_count, big.mark = ","), "\n")
 dbExecute(con, "DETACH jet_db")
-cat("✓ Jet data loaded\n\n")
 
 # 5. Austrian OMV Data
-cat("5. Loading OMV Austria data...\n")
+cat("5. Loading Austrian OMV data...\n")
 dbExecute(con, sprintf("ATTACH '%s' AS omv_db (READ_ONLY)", omv_db))
 
 dbExecute(con, "
   INSERT INTO unified_fuel_data
-  SELECT 
+  SELECT
     'Austria' as country,
     station_id,
     town as station_name,
@@ -361,31 +253,23 @@ dbExecute(con, "
     town as city,
     NULL as state_region,
     'OMV' as brand,
-    CASE 
-      WHEN fuel = 'diesel' THEN 'diesel'
-      WHEN fuel = 'gasoline_95' THEN 'gasoline_95'
-      WHEN fuel = 'maxxmotion_super_100plus' THEN 'gasoline_98'
-      WHEN fuel IN ('maxxmotion_diesel', 'diesel_plus', 'premium_power_diesel', 'hvo100_diesel') THEN 'diesel_premium'
-      ELSE fuel
-    END as fuel_type,
-    price_eur as price,
-    CAST(scraped_at AS VARCHAR) as date_raw,
+    fuel_type,
+    price,
+    CAST(date AS VARCHAR) as date_raw,
     'OMV Austria' as data_source,
-    NULL as file_source
+    file_source
   FROM omv_db.omv_austria_fuel
-  WHERE price_eur > 0 AND price_eur < 10
+  WHERE price > 0 AND price < 10
     AND lat IS NOT NULL AND lon IS NOT NULL
-    AND lat BETWEEN 46 AND 49 AND lon BETWEEN 9 AND 17
-    AND scraped_at >= '2024-01-01'
+    AND lat BETWEEN 45 AND 50 AND lon BETWEEN 9 AND 18
 ")
 
-omv_count <- dbGetQuery(con, "SELECT COUNT(*) as count FROM unified_fuel_data WHERE data_source = 'OMV Austria'")$count
-cat("  Records:", format(omv_count, big.mark = ","), "\n")
+omv_count <- dbGetQuery(con, "SELECT COUNT(*) as count FROM unified_fuel_data WHERE country = 'Austria' AND data_source = 'OMV Austria'")$count
+cat("  OMV records:", format(omv_count, big.mark = ","), "\n")
 dbExecute(con, "DETACH omv_db")
-cat("✓ OMV data loaded\n\n")
 
-# 6. Italian Data (skipping - no station coordinates)
-cat("6. Skipping Italian data (no station-level coordinates)\n\n")
+# 6. Italian Data (skip - no coordinates)
+cat("6. Italian data: SKIPPED (no station coordinates)\n")
 
 # 7. Slovenian Data
 cat("7. Loading Slovenian data...\n")
@@ -393,83 +277,73 @@ dbExecute(con, sprintf("ATTACH '%s' AS slovenian_db (READ_ONLY)", slovenian_db))
 
 dbExecute(con, "
   INSERT INTO unified_fuel_data
-  SELECT 
+  SELECT
     'Slovenia' as country,
-    station_id,
+    CAST(station_id AS VARCHAR) as station_id,
     station_name,
     station_lat as latitude,
     station_lng as longitude,
     NULL as city,
     NULL as state_region,
-    CAST(franchise_id AS VARCHAR) as brand,
     CASE 
-      WHEN fuel_type = 'dizel' THEN 'diesel'
-      WHEN fuel_type = 'dizel-premium' THEN 'diesel_premium'
-      WHEN fuel_type = '95' THEN 'gasoline_95'
-      WHEN fuel_type IN ('98', '100') THEN 'gasoline_98'
-      ELSE fuel_type
-    END as fuel_type,
+      WHEN franchise_id = 1 THEN 'Petrol'
+      WHEN franchise_id = 4 THEN 'MOL'
+      WHEN franchise_id = 5 THEN 'Shell'
+      ELSE 'Unknown'
+    END as brand,
+    fuel_type,
     fuel_price as price,
-    CAST(REGEXP_EXTRACT(file_source, '([0-9]{4}-[0-9]{2}-[0-9]{2})_([0-9]{2}-[0-9]{2})', 1) || ' ' || 
-         REPLACE(REGEXP_EXTRACT(file_source, '([0-9]{4}-[0-9]{2}-[0-9]{2})_([0-9]{2}-[0-9]{2})', 2), '-', ':') || ':00' AS VARCHAR) as date_raw,
+    CAST(date AS VARCHAR) as date_raw,
     'Slovenian National' as data_source,
     file_source
   FROM slovenian_db.slovenian_fuel
   WHERE fuel_price > 0 AND fuel_price < 10
     AND station_lat IS NOT NULL AND station_lng IS NOT NULL
     AND station_lat BETWEEN 45 AND 47 AND station_lng BETWEEN 13 AND 17
-    AND REGEXP_EXTRACT(file_source, '([0-9]{4}-[0-9]{2}-[0-9]{2})_([0-9]{2}-[0-9]{2})', 1) >= '2024-01-01'
 ")
 
-slovenian_count <- dbGetQuery(con, "SELECT COUNT(*) as count FROM unified_fuel_data WHERE data_source = 'Slovenian National'")$count
-cat("  Records:", format(slovenian_count, big.mark = ","), "\n")
+slovenian_count <- dbGetQuery(con, "SELECT COUNT(*) as count FROM unified_fuel_data WHERE country = 'Slovenia'")$count
+cat("  Slovenian records:", format(slovenian_count, big.mark = ","), "\n")
 dbExecute(con, "DETACH slovenian_db")
-cat("✓ Slovenian data loaded\n\n")
 
-# Create indexes for better performance
-cat("Creating indexes...\n")
-dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_country ON unified_fuel_data(country)")
-dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_fuel_type ON unified_fuel_data(fuel_type)")
-dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_date_raw ON unified_fuel_data(date_raw)")
-dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_country_fuel ON unified_fuel_data(country, fuel_type)")
-dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_station_id ON unified_fuel_data(station_id)")
-dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_coordinates ON unified_fuel_data(latitude, longitude)")
-cat("✓ Indexes created\n\n")
+# Export to CSV
+cat("\n📊 Exporting to CSV...\n")
+cat("Export path:", csv_path, "\n")
 
-# Summary statistics
-cat("===============================================\n")
-cat("UNIFIED DATASET SUMMARY\n")
-cat("===============================================\n\n")
+dbExecute(con, sprintf("
+  COPY unified_fuel_data 
+  TO '%s' 
+  (HEADER, DELIMITER ',')
+", csv_path))
 
+# Get final statistics
+total_records <- dbGetQuery(con, "SELECT COUNT(*) as total FROM unified_fuel_data")$total
+csv_size <- file.size(csv_path) / (1024^3)
+
+cat("\n✓ Export complete!\n")
+cat("Total records:", format(total_records, big.mark = ","), "\n")
+cat("CSV size:", round(csv_size, 2), "GB\n")
+cat("CSV path:", csv_path, "\n")
+
+# Summary by country
 summary_stats <- dbGetQuery(con, "
   SELECT 
     country,
-    fuel_type,
     COUNT(*) as records,
-    ROUND(MIN(price), 3) as min_price,
-    ROUND(MAX(price), 3) as max_price,
-    ROUND(AVG(price), 3) as avg_price,
-    MIN(date_raw) as earliest_date,
-    MAX(date_raw) as latest_date,
     COUNT(DISTINCT station_id) as unique_stations,
-    COUNT(DISTINCT brand) as unique_brands
+    MIN(price) as min_price,
+    MAX(price) as max_price,
+    ROUND(AVG(price), 3) as avg_price
   FROM unified_fuel_data
-  GROUP BY country, fuel_type
-  ORDER BY country, fuel_type
+  GROUP BY country
+  ORDER BY records DESC
 ")
 
+cat("\nSummary by country:\n")
 print(summary_stats)
-
-cat("\n")
-total_records <- dbGetQuery(con, "SELECT COUNT(*) as total FROM unified_fuel_data")$total
-total_stations <- dbGetQuery(con, "SELECT COUNT(DISTINCT station_id) as total FROM unified_fuel_data")$total
-total_countries <- dbGetQuery(con, "SELECT COUNT(DISTINCT country) as total FROM unified_fuel_data")$total
-cat("Total records:", format(total_records, big.mark = ","), "\n")
-cat("Total unique stations:", format(total_stations, big.mark = ","), "\n")
-cat("Total countries:", total_countries, "\n")
 
 # Disconnect
 dbDisconnect(con, shutdown = TRUE)
 
-cat("\n✓ Unified dataset created successfully!\n")
-cat("Database saved to:", unified_db, "\n")
+cat("\n✓ Unified dataset exported to CSV successfully!\n")
+cat("No heavy database created - direct CSV export complete!\n")

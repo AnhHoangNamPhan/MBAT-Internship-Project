@@ -160,8 +160,7 @@ create_table_if_not_exists <- function(table_name) {
         entry_etag VARCHAR,
         station_lat REAL,
         station_lng REAL,
-        file_source VARCHAR,
-        PRIMARY KEY (station_id, file_source, last_imported, fuel_type)
+        file_source VARCHAR
       )
     ")
     
@@ -183,6 +182,24 @@ if (length(fuel_files) == 0) {
 }
 
 cat("Found", length(fuel_files), "fuel files to process\n")
+
+# ---------- Get Already Processed Files ----------
+processed_files_in_db <- DBI::dbGetQuery(con, paste0(
+  "SELECT DISTINCT file_source FROM ", table_name
+))$file_source
+
+# Filter out already processed files
+fuel_files_to_process <- fuel_files[!basename(fuel_files) %in% processed_files_in_db]
+
+cat("Already processed:", length(fuel_files) - length(fuel_files_to_process), "files\n")
+cat("Remaining to process:", length(fuel_files_to_process), "files\n")
+
+if (length(fuel_files_to_process) == 0) {
+  cat("All files already processed!\n")
+  quit(save = "no")
+}
+
+fuel_files <- fuel_files_to_process
 
 # ---------- Main Processing Loop ----------
 total_rows <- 0
@@ -352,7 +369,7 @@ for (file in fuel_files) {
     })
   })
   
-  # Write to database
+  # Write to database (no duplicate checking - will deduplicate later)
   if (nrow(df) > 0) {
     # Check connection validity
     if (!DBI::dbIsValid(con)) {
@@ -360,31 +377,7 @@ for (file in fuel_files) {
       con <<- connect_duckdb()
     }
     
-    # Check for duplicates before inserting
-    duplicate_count <- 0
-    for (i in 1:nrow(df)) {
-      # Check connection validity before each query
-      if (!DBI::dbIsValid(con)) {
-        cat("Reconnecting to DuckDB...\n")
-        con <<- connect_duckdb()
-      }
-      
-      row <- df[i, ]
-      check_sql <- paste0("
-        SELECT COUNT(*) as count FROM ", table_name, " 
-        WHERE station_id = ? AND file_source = ? AND last_imported = ? AND fuel_type = ?
-      ")
-      result <- DBI::dbGetQuery(con, check_sql, params = list(
-        row$station_id, row$file_source, row$last_imported, row$fuel_type
-      ))
-      if (result$count > 0) duplicate_count <- duplicate_count + 1
-    }
-    
-    if (duplicate_count > 0) {
-      cat(" Found", duplicate_count, "existing rows, updating...\n")
-    }
-    
-    # Write data (DuckDB will handle duplicates with PRIMARY KEY constraint)
+    # Write data directly
     DBI::dbWriteTable(con, table_name, df, append = TRUE)
     cat(" Written", nrow(df), "rows to", table_name, "\n")
     total_rows <- total_rows + nrow(df)
