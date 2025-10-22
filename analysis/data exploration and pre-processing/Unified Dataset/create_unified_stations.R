@@ -1,8 +1,8 @@
 #!/usr/bin/env Rscript
 
-# Create Unified Stations Table - Direct CSV Export
-# Creates table with all unique stations from all countries
-# Exports directly to CSV without creating heavy unified database
+# Create Unified Stations Table
+# Creates a single table with all unique stations from all countries
+# Calculates nearby stations once per station (computationally efficient)
 
 library(DBI)
 library(duckdb)
@@ -21,18 +21,19 @@ italian_db <- "databases/italian_fuel_data.duckdb"
 slovenian_db <- "databases/slovenian_fuel_data.duckdb"
 german_db <- "databases/german_fuel_data.duckdb"
 
-# Output CSV path
-csv_path <- "data/unified_stations.csv"
+# Output database
+unified_db <- "databases/unified_fuel_data.duckdb"
 
 cat("Creating Unified Stations Table\n")
-cat("Direct CSV export (no database creation)\n")
-cat("========================================\n\n")
+cat("==============================\n\n")
 
-# Create temporary database for processing
-temp_db <- ":memory:"
-con_out <- dbConnect(duckdb(), temp_db)
+# Connect to output database
+con_out <- dbConnect(duckdb(), unified_db)
 
-# Create unified stations table
+# Drop existing stations table
+dbExecute(con_out, "DROP TABLE IF EXISTS unified_stations")
+
+# Create unified stations table (without primary key to handle duplicates)
 dbExecute(con_out, "
   CREATE TABLE unified_stations (
     country VARCHAR,
@@ -58,16 +59,25 @@ arboe_stations <- dbGetQuery(con_arboe, "
   SELECT DISTINCT
     'Austria' as country,
     id as station_id,
-    station_name,
+    name as station_name,
     ROUND(lat, 4) as latitude,
-    ROUND(lng, 4) as longitude,
+    ROUND(lon, 4) as longitude,
     city,
-    NULL as state_region,
-    brand,
+    bundesland as state_region,
+    CASE 
+      WHEN UPPER(name) LIKE '%SHELL%' THEN 'Shell'
+      WHEN UPPER(name) LIKE '%BP%' THEN 'BP'
+      WHEN UPPER(name) LIKE '%OMV%' THEN 'OMV'
+      WHEN UPPER(name) LIKE '%JET%' THEN 'JET'
+      WHEN UPPER(name) LIKE '%AVIA%' THEN 'AVIA'
+      WHEN UPPER(name) LIKE '%ENI%' THEN 'ENI'
+      WHEN UPPER(name) LIKE '%ARAL%' THEN 'ARAL'
+      ELSE 'Unknown'
+    END as brand,
     'ARBÖ' as data_source
   FROM arboe_prices
-  WHERE lat IS NOT NULL AND lng IS NOT NULL
-    AND lat BETWEEN 45 AND 50 AND lng BETWEEN 9 AND 18
+  WHERE lat IS NOT NULL AND lon IS NOT NULL
+    AND lat BETWEEN 45 AND 50 AND lon BETWEEN 9 AND 18
 ")
 
 dbWriteTable(con_out, "unified_stations", arboe_stations, append = TRUE)
@@ -83,22 +93,22 @@ oeamtc_stations <- dbGetQuery(con_oeamtc, "
     'Austria' as country,
     station_id,
     station_name,
-    ROUND(lat, 4) as latitude,
-    ROUND(lng, 4) as longitude,
-    city,
+    ROUND(station_lat, 4) as latitude,
+    ROUND(station_lng, 4) as longitude,
+    NULL as city,
     NULL as state_region,
-    brand,
+    station_brand as brand,
     'ÖAMTC' as data_source
-  FROM oeamtc_prices
-  WHERE lat IS NOT NULL AND lng IS NOT NULL
-    AND lat BETWEEN 45 AND 50 AND lng BETWEEN 9 AND 18
+  FROM oeamtc_fuel
+  WHERE station_lat IS NOT NULL AND station_lng IS NOT NULL
+    AND station_lat BETWEEN 45 AND 50 AND station_lng BETWEEN 9 AND 18
 ")
 
 dbWriteTable(con_out, "unified_stations", oeamtc_stations, append = TRUE)
 cat("    ÖAMTC stations:", nrow(oeamtc_stations), "\n")
 dbDisconnect(con_oeamtc)
 
-# 3. Austrian JET Stations
+# 3. Austrian Jet Stations
 cat("  Loading JET stations...\n")
 con_jet <- dbConnect(duckdb(), jet_db, read_only = TRUE)
 
@@ -146,9 +156,29 @@ dbWriteTable(con_out, "unified_stations", omv_stations, append = TRUE)
 cat("    OMV stations:", nrow(omv_stations), "\n")
 dbDisconnect(con_omv)
 
-# 5. Italian Stations (skip - no coordinates)
+# 5. Italian Stations
 cat("  Loading Italian stations...\n")
-cat("    Italian stations: 0 (no coordinates)\n")
+con_italian <- dbConnect(duckdb(), italian_db, read_only = TRUE)
+
+italian_stations <- dbGetQuery(con_italian, "
+  SELECT DISTINCT
+    'Italy' as country,
+    CAST(station_id AS VARCHAR) as station_id,
+    station_name,
+    ROUND(station_lat, 4) as latitude,
+    ROUND(station_lng, 4) as longitude,
+    NULL as city,
+    NULL as state_region,
+    station_brand as brand,
+    'Italian National' as data_source
+  FROM italian_fuel
+  WHERE station_lat IS NOT NULL AND station_lng IS NOT NULL
+    AND station_lat BETWEEN 35 AND 48 AND station_lng BETWEEN 6 AND 19
+")
+
+dbWriteTable(con_out, "unified_stations", italian_stations, append = TRUE)
+cat("    Italian stations:", nrow(italian_stations), "\n")
+dbDisconnect(con_italian)
 
 # 6. Slovenian Stations
 cat("  Loading Slovenian stations...\n")
@@ -204,22 +234,43 @@ cat("    German stations:", nrow(german_stations), "\n")
 dbDisconnect(con_german)
 
 # Remove duplicates and create unique physical locations
-cat("\nRemoving duplicate stations...\n")
+cat("\nRemoving duplicate stations and creating unique physical locations...\n")
 
-# Remove Austrian duplicates: prioritize ÖAMTC > ARBÖ > OMV > JET
-# Other countries: keep all stations
+# For Austrian duplicates: prioritize ÖAMTC > ARBÖ > OMV > JET (more reliable sources)
+# For other countries: keep all stations as they should be unique
 dbExecute(con_out, "
   CREATE OR REPLACE TABLE unified_stations_clean AS
   WITH ranked_stations AS (
     SELECT *,
       CASE 
-        WHEN country = 'Austria' AND data_source = 'ÖAMTC' THEN 1
-        WHEN country = 'Austria' AND data_source = 'ARBÖ' THEN 2
-        WHEN country = 'Austria' AND data_source = 'OMV Austria' THEN 3
-        WHEN country = 'Austria' AND data_source = 'Jet Austria' THEN 4
+        WHEN country = 'Austria' THEN
+          CASE data_source
+            WHEN 'ÖAMTC' THEN 1
+            WHEN 'ARBÖ' THEN 2  
+            WHEN 'OMV Austria' THEN 3
+            WHEN 'Jet Austria' THEN 4
+            ELSE 5
+          END
         ELSE 1
-      END as priority
+      END as source_priority
     FROM unified_stations
+  ),
+  deduplicated AS (
+    SELECT 
+      country,
+      station_id,
+      station_name,
+      latitude,
+      longitude,
+      city,
+      state_region,
+      brand,
+      data_source,
+      ROW_NUMBER() OVER (
+        PARTITION BY country, latitude, longitude 
+        ORDER BY source_priority, station_id
+      ) as rn
+    FROM ranked_stations
   )
   SELECT 
     country,
@@ -230,15 +281,9 @@ dbExecute(con_out, "
     city,
     state_region,
     brand,
-    data_source
-  FROM (
-    SELECT *,
-      ROW_NUMBER() OVER (
-        PARTITION BY country, latitude, longitude 
-        ORDER BY priority, station_id
-      ) as rn
-    FROM ranked_stations
-  ) ranked
+    data_source,
+    0 as nearby_stations_1km
+  FROM deduplicated
   WHERE rn = 1
 ")
 
@@ -246,18 +291,19 @@ dbExecute(con_out, "
 dbExecute(con_out, "DROP TABLE unified_stations")
 dbExecute(con_out, "ALTER TABLE unified_stations_clean RENAME TO unified_stations")
 
-# Calculate nearby stations
-cat("\nCalculating nearby stations...\n")
+# Calculate nearby stations for all stations
+cat("\nCalculating nearby stations (1km radius)...\n")
 dbExecute(con_out, "
   UPDATE unified_stations 
   SET nearby_stations_1km = (
-    SELECT COUNT(*)
+    SELECT COUNT(*)  -- Count nearby stations (excluding the station itself)
     FROM unified_stations other_stations
     WHERE other_stations.station_id != unified_stations.station_id
       AND other_stations.latitude IS NOT NULL 
       AND other_stations.longitude IS NOT NULL
       AND unified_stations.latitude IS NOT NULL 
       AND unified_stations.longitude IS NOT NULL
+      -- Distance calculation: approximately 1km in degrees (4 decimal precision)
       AND (
         (other_stations.latitude - unified_stations.latitude) * (other_stations.latitude - unified_stations.latitude) +
         (other_stations.longitude - unified_stations.longitude) * (other_stations.longitude - unified_stations.longitude)
@@ -266,7 +312,27 @@ dbExecute(con_out, "
   WHERE latitude IS NOT NULL AND longitude IS NOT NULL
 ")
 
-# Get statistics
+# Create index for performance
+dbExecute(con_out, "CREATE INDEX IF NOT EXISTS idx_unified_stations_id ON unified_stations(country, station_id)")
+dbExecute(con_out, "CREATE INDEX IF NOT EXISTS idx_unified_stations_coords ON unified_stations(latitude, longitude)")
+
+# Summary statistics
+cat("\nUnified stations summary:\n")
+summary_stats <- dbGetQuery(con_out, "
+  SELECT 
+    country,
+    COUNT(*) as station_count,
+    AVG(nearby_stations_1km) as avg_nearby_stations,
+    MIN(nearby_stations_1km) as min_nearby_stations,
+    MAX(nearby_stations_1km) as max_nearby_stations
+  FROM unified_stations
+  GROUP BY country
+  ORDER BY station_count DESC
+")
+
+print(summary_stats)
+
+# Overall statistics
 overall_stats <- dbGetQuery(con_out, "
   SELECT 
     COUNT(*) as total_stations,
@@ -285,22 +351,8 @@ cat("Average nearby stations:", round(overall_stats$avg_nearby_stations, 2), "\n
 cat("Min nearby stations:", overall_stats$min_nearby_stations, "\n")
 cat("Max nearby stations:", overall_stats$max_nearby_stations, "\n")
 
-# Export to CSV
-cat("\n📊 Exporting to CSV...\n")
-cat("Export path:", csv_path, "\n")
-
-dbExecute(con_out, sprintf("
-  COPY unified_stations 
-  TO '%s' 
-  (HEADER, DELIMITER ',')
-", csv_path))
-
-# Get CSV file size
-csv_size <- file.size(csv_path) / (1024^2)  # Convert to MB
-cat("✓ CSV export complete! Size:", round(csv_size, 2), "MB\n")
-
 # Disconnect
 dbDisconnect(con_out, shutdown = TRUE)
 
-cat("\n✓ Unified stations table exported to CSV successfully!\n")
-cat("No heavy database created - direct CSV export complete!\n")
+cat("\nUnified stations table created successfully!\n")
+cat("Ready for efficient nearby station mapping to price records! 🎯\n")
