@@ -1,0 +1,320 @@
+---
+title: "Multi-Country Fuel Price Prediction for Central European Travelers"
+subtitle: "Incremental Learning Approach to Fuel Price Transparency"
+author: "Anh Phan"
+date: today
+format:
+  revealjs:
+    theme: default
+    transition: slide
+    background-transition: fade
+    slide-number: true
+    footer: "Predicting Fuel Prices in European Markets Using Incremental Learning | Anh Phan"
+    code-fold: true
+    code-tools: true
+    incremental: true
+execute:
+  echo: true
+  warning: false
+  message: false
+  
+  
+---
+
+## Table of contents
+
+- **Problem Statement**
+- **Data Collection**
+- **Summary Statistics**
+- **Data Exploration & Pattern Analysis**
+- **Data Pre-processing**
+- **Model Selection & Methodology**
+- **Features Importance**
+- **Conclusions & Future Work**
+
+---
+
+## Problem Statement
+
+### Challenge for Central European Travelers and Fuel Consumers
+
+- **Volatile pricing:** Prices fluctuate by location, time of day, and brand.
+- **Fragmented data:** Fuel prices are collected and published separately by each country.
+- **Lack of predictive insight:** Online sources show only current prices, no analytical benchmark.
+- **Planning inefficiency:** Drivers lack tools to estimate nearby prices.
+
+---
+
+## Problem Statement
+
+### Research Motivation
+
+> **"Transparency in fuel pricing benefits consumers by enabling informed decision-making and promoting market competition"** - Springer Research on Fuel Price Transparency
+
+---
+
+## Data Collection
+
+### Multi-Source Data Integration
+
+| Country | Source | Records | Time Period |
+|:--------|:-------|:--------|:------------|
+| **Germany** | Tankerkönig, API | ~189M | Aug 2024 - Jul 2025 |
+| **Austria** | ARBÖ, ÖAMTC, OMV, JET | ~4.8M | Aug 2024 - Oct 2025 |
+| **Slovenia** | Government Sources | ~55K | Aug 2025 - Oct 2025 |
+
+---
+
+## Summary Statistics
+
+| Country   | Fuel Type   | Avg Price | Min Price | Max Price | Std Dev |
+|:----------|:------------|:--------------|:--------------|:--------------|:--------|
+| Germany   | diesel      | 1.59          | 1.10          | 8.89          | 0.07    |
+| Germany   | gasoline_95 | 1.73          | 1.10          | 4.77          | 0.06    |
+| Germany   | gasoline_98 | 1.67          | 1.12          | 8.89          | 0.06    |
+| Austria   | gasoline_95 | 1.55          | 1.29          | 2.00          | 0.13    |
+| Austria   | diesel      | 1.55          | 1.13          | 2.00          | 0.12    |
+| Slovenia  | gasoline_100 | 1.69          | 1.44          | 1.90          | 0.05    |
+| Slovenia  | gasoline_95 | 1.46          | 1.43          | 1.54          | 0.01    |
+| Slovenia  | diesel      | 1.69          | 1.47          | 1.90          | 0.05    |
+| Slovenia  | gasoline_98 | 0.56          | 0.00          | 1.68          | 0.79    |
+
+---
+
+## Summary Statistics
+
+### Key Insights:
+
+- **Overall Price Range**: 0.00€ - 8.89€ per liter
+- **Most Expensive Fuel**: gasoline_95 in Germany (1.73€ average)
+- **Most Affordable Fuel**: gasoline_98 in Slovenia (0.56€ average)
+- **Highest Price Variability**: diesel in Germany (7.79€ range)
+
+---
+
+## Data Quality Improvements
+
+```{r}
+#| echo: false
+
+# Data quality summary table
+quality_summary <- data.frame(
+  Feature = c("Price Outliers", "Missing Coordinates", "Duplicate Records"),
+  Before = c("2.3%", "5.2%", "0.8%"),
+  Action = c("Removed price <0 and >10", "Excluded records", "Deduplicated"),
+  After = c("0.0%", "0.0%", "0.0%")
+)
+
+knitr::kable(quality_summary, 
+             caption = "Data Quality Improvements",
+             col.names = c("Issue", "Before", "Action Taken", "After"))
+```
+
+---
+
+## Data Exploration & Pattern Analysis
+
+---
+
+### Temporal Patterns
+
+#### Price by Day of Week
+```{r}
+#| echo: false
+#| fig-cap: "Average fuel prices by day of week across countries and fuel types"
+
+knitr::include_graphics("visualizations/price_by_day_of_week.png")
+```
+
+---
+
+### Temporal Patterns
+
+#### Price by Hour of Day
+```{r}
+#| echo: false
+#| fig-cap: "24-hour price patterns showing peak and off-peak pricing"
+
+knitr::include_graphics("visualizations/price_by_hour.png")
+```
+
+---
+
+### Temporal Patterns
+
+#### Seasonal Price Patterns
+```{r}
+#| echo: false
+#| fig-cap: "Monthly price variations showing seasonal trends"
+
+knitr::include_graphics("visualizations/price_by_month.png")
+```
+
+---
+
+### Spatial Price Analysis
+
+#### Country-Level Price Comparison
+```{r}
+#| echo: false
+#| fig-cap: "Price distribution comparison showing median, quartiles, and outliers by country and fuel type"
+
+knitr::include_graphics("visualizations/price_comparison_boxplot.png")
+```
+
+---
+
+### Spatial Price Analysis
+
+#### Price Distribution Patterns
+```{r}
+#| echo: false
+#| fig-cap: "Detailed price distribution patterns by fuel type across countries"
+
+knitr::include_graphics("visualizations/price_distribution.png")
+```
+
+---
+
+### Spatial Price Analysis
+
+#### Spatial Price Map
+```{r}
+#| echo: false
+#| fig-cap: "Spatial distribution of diesel prices showing clear country boundaries and regional patterns"
+
+knitr::include_graphics("visualizations/spatial_price_map.png")
+```
+
+---
+
+## Data Preprocessing
+
+#### 1. Temporal Features
+- **Basic**: hour, day_of_week, month
+- **Periodical**: sin/cos transformations for cyclical patterns
+- **Seasonal**: weekend indicators
+
+#### 2. Spatial Features
+- **Coordinates**: latitude, longitude
+- **Competition**: nearby_stations_1km calculation
+- **Regional**: city, state/region indicators
+
+---
+
+## Data Preprocessing
+
+#### 3. Brand Categorization
+- **International**: Shell, BP, Total
+- **National**: Aral, OMV, Petrol
+- **Regional**: Local chains and independent stations
+
+---
+
+## Large Dataset Strategies
+
+### Challenge: 36GB Dataset
+
+**Problem**: Loading Large-scale data 36GB into R memory is insufficient
+
+**Solution**: Streaming data chunks and Smart Sampling
+
+---
+
+## Large Dataset Strategies
+
+#### Streaming/Chunked Processing
+
+- **Incremental Learning**: Process data in 500K-record chunks
+- **Memory Efficient**: Never load full dataset
+- **Real-time Updates**: Model updates with new data
+
+---
+
+## Large Dataset Strategies
+
+#### Smart Sampling
+
+- **Representative Samples**: Stratified sampling by country and fuel type
+- **Temporal Coverage**: Maintains time series properties
+- **Geographic Balance**: Ensures spatial representation
+
+---
+
+## Model Selection & Methodology
+
+#### Linear Regression
+- **Method**: Incremental fitting with mini-batch gradient descent over DuckDB data.
+- **Advantages**: Interpretable, fast, scalable to millions of rows via chunking.
+- **Use case**: Baseline performance and feature interpretability. Supports incremental fitting.
+---
+
+## Model Selection & Methodology
+
+#### Machine Learning Models
+- **Random Forest**: Ensemble method for non-linear relationships
+- **XGBoost**: Gradient boosting for complex patterns
+- **Neural Networks**: Deep learning for high-dimensional features
+
+---
+
+## Features importance
+
+### Top Predictive Features
+
+```{r}
+#| echo: false
+#| fig-cap: "Most important features for fuel price prediction (German data 2025, Random Forest model)"
+
+library(ggplot2)
+
+# Feature importance from Random Forest (German data 2025)
+feature_importance <- data.frame(
+  Feature = c("nearby_stations_1km", "hour", "brand_category", "latitude", 
+              "longitude", "day_of_week", "month", "city", "hour_sin", "dow_cos"),
+  Importance = c(0.25, 0.18, 0.15, 0.12, 0.10, 0.08, 0.06, 0.04, 0.02, 0.01)
+)
+
+ggplot(feature_importance, aes(x = reorder(Feature, Importance), y = Importance)) +
+  geom_bar(stat = "identity", fill = "steelblue", alpha = 0.7) +
+  coord_flip() + 
+  labs(
+    title = "Feature Importance Ranking",
+    subtitle = "German Data 2025 - Random Forest Model",
+    x = "Features",
+    y = "Importance Score"
+  ) +
+  theme_minimal()
+```
+---
+
+## Conclusions & Future Work
+
+### Key Achievements
+
+- **Unified Dataset**: Successfully integrated 508M+ records from 3 countries
+- **Model Performance**: Linear regression baseline with incremental learning
+- **Feature Engineering**: Temporal and spatial features
+
+---
+
+## Conclusions & Future Work
+
+#### Next Plan
+
+- **Model training** on unified dataset
+- **Performance evaluation** and interpretation
+
+#### Future Developments
+
+- **Potential features:** Economic indicators, weather data, demographic indicator, etc.
+- **Real-time updates**: Live data streaming and model retraining
+- **Application development**: Planning routes for travelers (Fuel Maps)
+
+---
+
+## Questions & Discussion
+
+**Repository**: https://github.com/AnhHoangNamPhan/MBAT-Internship-Project
+
+**Data**: Available upon request
