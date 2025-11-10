@@ -206,4 +206,159 @@ The exploratory evidence underscores strong spatial, temporal, and brand-level s
 
 Consequently, the modelling pipeline progresses from interpretable linear regressions to smooth GAMs and, finally, high-capacity learners (XGBoost, deep neural networks), ensuring both explanatory insight and predictive capability.
 
+## Methodology
+
+This chapter describes the modelling framework used to predict hourly diesel prices at the station level.  
+It covers data preparation, feature construction, econometric and machine-learning model design, training setup, and interpretative framework.  
+The approach aims to balance interpretability with predictive accuracy, combining nested linear regressions with nonlinear extensions such as GAMs, gradient-boosted trees, and neural networks.
+
+### 5.1 Data Sources
+
+Fuel price data are obtained from the harmonised **DuckDB** warehouse described in Chapter 4, specifically the table `german_fuel.duckdb`, containing timestamped retail diesel prices aggregated to an hourly frequency via  
+`arg_max(diesel, date)` to retain the latest observation per station per hour.  
+
+Station-level metadata—including brand, geographic coordinates, and competition metrics—are drawn from `stations.duckdb`, which provides a consistent schema across European countries.  
+For this modelling exercise, we focus on the **Bavarian subset** (postcodes beginning with “8”) to ensure internal consistency and spatial coverage.  
+
+All DuckDB connections are executed in read-only mode with multithreading enabled for reproducible performance and efficient in-memory computation.
+
+### 5.2 Data Preparation
+
+The data preparation pipeline proceeds as follows:
+
+1. **Station filtering:** Stations with missing or invalid coordinates are excluded.  
+2. **Regional subsetting:** Bavarian stations are identified via postcode prefix filtering.  
+3. **Hourly truncation:** Timestamps are rounded to the hour to align price changes with temporal covariates.  
+4. **Data merging:** Station-level price observations are joined with metadata on brand, coordinates, and competition.  
+5. **Quality control:** Stations with fewer than two valid hourly observations are dropped to avoid sparse temporal sequences.  
+
+All transformations are implemented in R using the `dplyr` framework.  
+Intermediate tables are removed with explicit garbage collection to maintain performance on commodity hardware.
+
+---
+
+### 5.3 Feature Engineering
+
+Feature engineering creates the explanatory structure used in subsequent models.  
+The following transformations are applied:
+
+- **Temporal variables:** Month, weekday, and hour indicators extracted from timestamps to capture seasonal and diurnal patterns.  
+- **Sub-regional fixed effects:** Derived from the second and third digits of the postal code (`Zip2`), approximating intra-state districts.  
+- **Brand categories:** Top 10 brands treated as individual factors; remaining stations grouped by network size (“large”, “medium”, “small”, “tiny”).  
+- **Competition metric:** Number of other stations within 1 km (`nearby1km`), computed via great-circle distance joins.  
+- **Spatial coordinates:** Station longitude and latitude, later expanded via third-degree polynomial terms.  
+- **Temporal lags:** Hourly, daily, and weekly diesel price lags (`t – 1 h`, `t – 24 h`, `t – 168 h`) to capture persistence and autocorrelation.  
+
+#### Table 5.1 Variable Definitions
+
+| **Symbol / name** | **Definition / Construction and Source** |
+|:------------------|:----------------------------------------|
+| \(p_{it}\) | Retail diesel price (€ / L) at station *i* and hour *t* (latest hourly record). Derived from `german_fuel.duckdb` via `arg_max(diesel, date)`. |
+| \( \mathbf{1}\{month(t)=m\} \) | Month fixed effects (Jan–Dec) derived from timestamp. |
+| \( \mathbf{1}\{weekday(t)=d\} \) | Day-of-week fixed effects (Sun–Sat) derived from timestamp. |
+| \( \mathbf{1}\{hour(t)=h\} \) | Hour-of-day fixed effects (0–23) derived from timestamp. |
+| \( \mathbf{1}\{Zip2_i=z\} \) | Sub-region fixed effects using 2nd & 3rd postcode digits (district identifiers). From `stations.duckdb`. |
+| \(lon_i, lat_i\) | Station longitude / latitude from `stations.duckdb`. |
+| \( \mathbf{1}\{BrandCat_i=b\} \) | Brand categories: top 10 brands as named factors; others grouped by network size. Constructed in modelling script. |
+| \(nearby1km_i\) | Count of other stations within 1 km (competition proxy). Pre-computed in `stations.duckdb`. |
+| \(n_i, \log n_i\) | Brand network size (station count per brand) and its logarithm. Computed in script. |
+| \(p_{i,t-1h}, p_{i,t-24h}, p_{i,t-168h}\) | Station-specific price lags (1 h, 1 d, 1 w). Created prior to dataset splitting. |
+| \( \varepsilon_{it} \) | Mean-zero error term. |
+
+### 5.4 Model Specification
+
+To ensure interpretability and incremental complexity, we estimate three nested Ordinary Least Squares (OLS) models.
+
+#### 5.4.1 LM-1 (Calendar and Sub-region)
+\[
+p_{it} = \alpha + Month_t + Weekday_t + Hour_t + Zip2_i + \varepsilon_{it}
+\]
+
+#### 5.4.2 LM-2 (+ Location, Brand, Competition)
+\[
+p_{it} = \text{LM-1 terms} + \beta_1 lon_i + \beta_2 lat_i + BrandCat_i + \gamma nearby1km_i + \delta n_i + \varepsilon_{it}
+\]
+
+#### 5.4.3 LM-3 (+ Lags and Spatial Polynomials)
+\[
+p_{it} = \text{LM-2 terms} + \phi_1 p_{i,t-1h} + \phi_2 p_{i,t-24h} + \phi_3 p_{i,t-168h} + poly(lon_i, 3) + poly(lat_i, 3) + \log n_i + \varepsilon_{it}
+\]
+
+We report \(R^2\), RMSE (validation / test), and BIC.  
+LM-3 represents the strongest linear baseline and defines the **feature set** for all nonlinear models.
+
+---
+
+### 5.5 Nonlinear Extensions
+
+#### 5.5.1 Generalized Additive Model (GAM)
+The GAM extends LM-3 by applying smooth functions:
+\[
+p_{it} = s(p_{i,t-1h}) + s(p_{i,t-24h}) + s(p_{i,t-168h}) + s(month_t) + s(wday_t) + s(hour_t) + s(lon_i, lat_i) + BrandCat_i + s(n_i) + s(nearby1km_i) + Zip2_i + \varepsilon_{it}
+\]
+Estimated using `mgcv::bam` with cyclic smooths for temporal variables and thin-plate splines for spatial components.
+
+#### 5.5.2 XGBoost Model
+A gradient-boosted regression tree is trained on the LM-3 feature matrix using `xgboost` with early stopping (validation RMSE).  
+Tree depth, learning rate, and regularisation parameters are tuned via grid search.  
+Feature importance is evaluated from gain statistics.
+
+#### 5.5.3 Deep Neural Network (DNN)
+A fully connected neural network (128 → 64 → 32 → 1) trained with MSE loss, Adam optimiser, and early stopping on validation error.  
+All numeric predictors are z-scored; categorical features are one-hot encoded.  
+Implementation uses `keras` within R for reproducibility.
+
+---
+
+### 5.6 Training and Evaluation Setup
+
+- **Train–Validation–Test Split**  
+  - Training: Aug 2024 – Jul 2025 (80 %)  
+  - Validation: Aug 2024 – Jul 2025 (20 %)  
+  - Test: Aug 2025 – Oct 2025 (out-of-sample)
+
+- **Evaluation Metrics**  
+  \[
+  RMSE = \sqrt{\frac{1}{n}\sum(\hat{p}_{it} - p_{it})^2}, \quad
+  R^2 = 1 - \frac{\sum(\hat{p}_{it} - p_{it})^2}{\sum(p_{it} - \bar{p})^2}
+  \]
+  BIC is additionally computed for linear models to evaluate parsimony.
+
+All computations run under R 4.4 on multicore hardware; outputs (fitted objects, residuals, and metrics) are version-controlled as `.rds` artefacts for reproducibility.
+
+---
+
+### 5.7 Feature Selection and Consistency
+
+The LM-3 feature set forms the canonical input across all subsequent nonlinear models.  
+This uniformity isolates differences in model performance to the estimation method rather than variable inclusion.  
+Feature scaling (z-score) is applied only where algorithmically necessary (e.g., neural networks).  
+Cyclical time features are encoded using sine–cosine transformations to preserve periodicity.
+
+---
+
+### 5.8 Model Interpretation and Comparison
+
+Interpretation focuses on both statistical and structural insights derived from fitted models.
+
+**Linear Models (LM-1 to LM-3).**  
+Coefficient estimates reveal the marginal effects of temporal, spatial, and competitive factors.  
+Variance inflation factors are monitored to diagnose collinearity, and fixed-effect magnitudes indicate seasonality strength.
+
+**GAM Interpretation.**  
+Smooth terms \(s(\cdot)\) provide interpretable nonlinear relationships—for example, cyclic weekly oscillations or convex spatial gradients—visualised via partial-effect plots.
+
+**Machine-Learning Models.**  
+XGBoost and DNN models are explained using feature-importance metrics and SHAP (Shapley Additive Explanation) values, quantifying marginal predictor contributions while retaining model-agnostic comparability.
+
+**Comparative Framework.**  
+Models are assessed along:
+- Predictive accuracy (RMSE / validation and test)  
+- Explanatory power (\(R^2\), Adj.\(R^2\))  
+- Parsimony (BIC, for linear models)  
+- Interpretability and computational cost  
+
+This integrated evaluation framework highlights the trade-off between interpretability and predictive performance, forming the empirical foundation for **Chapter 6 (Results and Discussion)**.
+
+---
 
