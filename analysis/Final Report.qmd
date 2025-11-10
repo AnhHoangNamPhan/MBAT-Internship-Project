@@ -1,0 +1,72 @@
+---
+title: "Estimating Retail Fuel Prices in Central Europe from Station-Level Streams"
+subtitle: "Bavaria and North Rhine–Westphalia case studies with Linear Models, GAM, XGBoost, and Neural Networks"
+author: "Anh Phan"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    code-fold: true
+    theme: cosmo
+  pdf:
+    toc: true
+    number-sections: true
+    geometry: margin=1in
+    keep-tex: true
+  docx:
+    toc: true
+    number-sections: true
+execute:
+  echo: true
+  warning: false
+  message: false
+crossref:
+  fig-prefix: Figure
+  tbl-prefix: Table
+fontsize: 11pt
+linkcolor: "#2c7be5"
+---
+
+
+### Abstract
+
+Retail fuel-price dynamics in Europe embody a complex interplay of geography, brand strategy, consumer behavior and infrastructure‐driven constraints. This project presents a unified approach to generating a station-level fuel-price estimation framework across multiple European countries, beginning with Diesel prices in Germany and Austria and targeting a broader rollout to Central Europe. A major component is the creation of harmonised DuckDB databases for price streams and station metadata (locations, brands, competition measures) for Germany, Austria, Slovenia and Italy. With memory and computational constraints accounted for, we focus this analysis on two contrasting German regions: Bavaria, characterised by mountainous terrain, tourism-driven fuel consumption and lower station density, and North Rhine–Westphalia, representing a highly industrialised, urbanised and densely-stationed western market. We estimate and compare six models — three linear specifications, a Generalised Additive Model (GAM) with spatial and temporal smooths, an XGBoost ensemble and a dense neural network — using the same engineered features to facilitate fair comparison. Results reveal that temporal lags, brand network size and spatial competition metrics explain a large share of price variation, while regional choice meaningfully shifts coefficient magnitudes and model fit. The ensuing pipeline lays the groundwork for a consumer-facing web tool or policy dashboard that estimates station-level prices across Europe and supports transparency and market competition.
+
+## Motivation
+
+2.1 Transparency, consumer welfare and competition
+
+  From the perspective of consumer welfare, transparent fuel pricing reduces search costs, promotes informed station choice and can intensify price competition. For regulators, visibility into station-level data aids monitoring of anomalies, collusion risk or regional pricing disparities. Yet transparency is not a panacea: as several studies show, mere visibility of prices can sometimes facilitate tacit coordination among dominant brands if consumer switching remains limited or search costs persist.
+
+2.2 Fragmentation and the need for harmonised data
+
+Despite national transparency systems, cross-country analysis remains limited due to heterogeneity in data formats (different web APIs), station identifier conventions, and release frequency. Without harmonisation, comparisons across borders risk mis-sampling or structural bias. Our database unifies station metadata (brand, lat/lon, postcodes, nearby station counts) and price records via DuckDB, enabling efficient query, feature engineering and modelling across countries.
+
+2.3 Regional diversity and contrasting market structures
+
+Fuel markets are far from homogeneous. In a mountainous tourism region like Bavaria, factors such as logistic costs, seasonal flows and lower station density may dominate. In contrast, NRW’s dense urban and highway network, diverse consumer base and high station competition present a different dynamic. By analysing both, we can test whether models transfer reasonably, and whether explanatory drivers shift meaningfully across settings.
+
+2.4 Towards a tool for estimation and transparency
+
+Beyond academic interest, the ability to estimate station-level prices in near real-time serves multiple stakeholders: motorists planning refuelling stops, logistics firms minimising per-kilometre fuel cost, regulators identifying outlier stations or sub-regions, and market analysts tracking spatial price gradients. Integrating our modelling pipeline into a web tool or dashboard amplifies the policy and consumer-impact dimension of this project.
+
+### Literature Review
+
+3.1 Retail fuel-price determinants and transparency effects
+
+Empirical analyses show that fuel prices respond to crude oil movements, taxation changes, logistics cost shifts and station-level competition. For example, Bernhardt, Breiderhoff & Dewenter (2025) evaluate transparency reforms across German-speaking countries and find mixed effects: Germany saw a moderate price drop post–MTU implementation, whereas France and Austria exhibited muted or variable responses (see Springer report). In Austria, Becker et al. (2021) observed 7.5% and 5.4% price decreases for gasoline and Diesel respectively after a Price-Fixing Act amendment. These studies highlight that transparency, while necessary, is not sufficient; local market structure and consumer behaviour moderate results.
+
+3.2 Spatial competition in station markets
+
+Several studies employ spatial econometric techniques (SAR/SEM) to capture how station-proximity, entry of rivals, and local density shape retail fuel pricing. For example, Byrne (2010) finds that stations consider their ~15 nearest competitors when setting prices, suggesting strong spatial interaction. Price Effects of Spatial Competition (2023) shows that the entry of a nearby rival leads to measurable price decreases. In Germany, Fiedler (2025) reports a statistically significant negative effect of gas station density on Diesel prices and a positive effect of market concentration. These findings support our expectation that higher station density suppresses margins and that spatial competition exerts a deterrent effect on price mark-ups in dense urban settings.
+
+3.3 Machine Learning & tabular modelling of fuel prices
+
+More recently, machine learning techniques (XGBoost, random forests, neural networks) have been applied to fuel-price forecasting, though largely at aggregated levels (national/regional) rather than station-hour microdata. Generalised additive models (GAMs) represent a middle ground: they permit smooth nonlinear relationships (e.g., spatial price gradients) while retaining interpretability. Our approach integrates both interpretability (LM, GAM) and predictive power (XGBoost, NN) within the same feature regime — something rarely seen in the existing literature.
+
+3.4 Gaps addressed by this project
+
+The literature reveals three noticable gaps which our project addresses: (1) Station-level, high-frequency (hourly) modelling across national boundaries; (2) Integration of spatial competition across countries (nearby station counts), brand scale and locational coordinates into a unified modelling pipeline; (3) Deployment-oriented design where modelling is not only analytic but built for operational use (web tool, weekly re-training). This gives the project both academic novelty and practical relevance.
+
