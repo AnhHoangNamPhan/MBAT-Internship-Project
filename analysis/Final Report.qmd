@@ -30,7 +30,7 @@ linkcolor: "#2c7be5"
 ---
 
 
-### Abstract
+## Abstract
 
 Retail fuel-price dynamics in Europe embody a complex interplay of geography, brand strategy, consumer behavior and infrastructure‐driven constraints. This project presents a unified approach to generating a station-level fuel-price estimation framework across multiple European countries, beginning with Diesel prices in Germany and Austria and targeting a broader rollout to Central Europe. A major component is the creation of harmonised DuckDB databases for price streams and station metadata (locations, brands, competition measures) for Germany, Austria, Slovenia and Italy. With memory and computational constraints accounted for, we focus this analysis on two contrasting German regions: Bavaria, characterised by mountainous terrain, tourism-driven fuel consumption and lower station density, and North Rhine–Westphalia, representing a highly industrialised, urbanised and densely-stationed western market. We estimate and compare six models — three linear specifications, a Generalised Additive Model (GAM) with spatial and temporal smooths, an XGBoost ensemble and a dense neural network — using the same engineered features to facilitate fair comparison. Results reveal that temporal lags, brand network size and spatial competition metrics explain a large share of price variation, while regional choice meaningfully shifts coefficient magnitudes and model fit. The ensuing pipeline lays the groundwork for a consumer-facing web tool or policy dashboard that estimates station-level prices across Europe and supports transparency and market competition.
 
@@ -52,7 +52,7 @@ Fuel markets are far from homogeneous. In a mountainous tourism region like Bava
 
 Beyond academic interest, the ability to estimate station-level prices in near real-time serves multiple stakeholders: motorists planning refuelling stops, logistics firms minimising per-kilometre fuel cost, regulators identifying outlier stations or sub-regions, and market analysts tracking spatial price gradients. Integrating our modelling pipeline into a web tool or dashboard amplifies the policy and consumer-impact dimension of this project.
 
-### Literature Review
+## Literature Review
 
 3.1 Retail fuel-price determinants and transparency effects
 
@@ -70,7 +70,7 @@ More recently, machine learning techniques (XGBoost, random forests, neural netw
 
 The literature reveals three noticable gaps which our project addresses: (1) Station-level, high-frequency (hourly) modelling across national boundaries; (2) Integration of spatial competition across countries (nearby station counts), brand scale and locational coordinates into a unified modelling pipeline; (3) Deployment-oriented design where modelling is not only analytic but built for operational use (web tool, weekly re-training). This gives the project both academic novelty and practical relevance.
 
-### Data Overview and Exploratory Analysis
+## Data Overview and Exploratory Analysis
 
 #### 4.1 Data Sources and Scraping Pipeline
 
@@ -337,28 +337,5 @@ Cyclical time features are encoded using sine–cosine transformations to preser
 
 ---
 
-### 5.8 Model Interpretation and Comparison
-
-Interpretation focuses on both statistical and structural insights derived from fitted models.
-
-**Linear Models (LM-1 to LM-3).**  
-Coefficient estimates reveal the marginal effects of temporal, spatial, and competitive factors.  
-Variance inflation factors are monitored to diagnose collinearity, and fixed-effect magnitudes indicate seasonality strength.
-
-**GAM Interpretation.**  
-Smooth terms \(s(\cdot)\) provide interpretable nonlinear relationships—for example, cyclic weekly oscillations or convex spatial gradients—visualised via partial-effect plots.
-
-**Machine-Learning Models.**  
-XGBoost and DNN models are explained using feature-importance metrics and SHAP (Shapley Additive Explanation) values, quantifying marginal predictor contributions while retaining model-agnostic comparability.
-
-**Comparative Framework.**  
-Models are assessed along:
-- Predictive accuracy (RMSE / validation and test)  
-- Explanatory power (\(R^2\), Adj.\(R^2\))  
-- Parsimony (BIC, for linear models)  
-- Interpretability and computational cost  
-
-This integrated evaluation framework highlights the trade-off between interpretability and predictive performance, forming the empirical foundation for **Chapter 6 (Results and Discussion)**.
-
----
+## Results and Discussion
 
