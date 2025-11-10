@@ -70,3 +70,140 @@ More recently, machine learning techniques (XGBoost, random forests, neural netw
 
 The literature reveals three noticable gaps which our project addresses: (1) Station-level, high-frequency (hourly) modelling across national boundaries; (2) Integration of spatial competition across countries (nearby station counts), brand scale and locational coordinates into a unified modelling pipeline; (3) Deployment-oriented design where modelling is not only analytic but built for operational use (web tool, weekly re-training). This gives the project both academic novelty and practical relevance.
 
+### Data Overview and Exploratory Analysis
+
+#### 4.1 Data Sources and Scraping Pipeline
+
+The empirical foundation of this study is a unified, high-frequency database of European retail fuel prices constructed from national transparency portals and industry data feeds.
+Our primary focus is on Diesel prices at the station level across Germany, Austria, and Slovenia (with preliminary integration for Italy). Since 2014, several European states have adopted transparency legislation mandating the public disclosure of fuel price changes in near real time. These data streams are invaluable for consumers and researchers alike but differ substantially in format, update cadence, coverage, and station identifiers.
+Hence, cross-country comparability requires a careful process of data extraction, harmonisation, and integration.
+
+**National data sources:**
+
+	•	Germany — Markttransparenzstelle für Kraftstoffe (MTS-K).
+Germany’s transparency feed, managed by the Federal Cartel Office, publishes event-based updates for all registered stations whenever a price change occurs. The data are accessed via the Tankerkönig mirror API, providing station metadata (UUID, brand, address, coordinates) and event logs for Diesel, E5, and E10. Due to its event-based nature, Germany’s feed represents the most granular and dynamic dataset, forming the empirical backbone of the modelling phase (specifically, Bavaria and North Rhine–Westphalia).
+
+	•	Austria — E-Control Preisvergleich ecosystem.
+Austria’s national energy regulator, E-Control, operates a network of APIs under the Preisvergleich umbrella, accessed through partners such as ÖAMTC and ARBÖ. These interfaces expose JSON payloads containing station attributes, operating hours, and Diesel/Super price updates. Scrapers built in R and bash post to the APIs and store the responses in a harmonised schema consistent with the German dataset.
+
+	•	Slovenia — goriva.si.
+The Slovenian government portal goriva.si publishes paginated JSON data with station coordinates and prices. Automated scripts crawl the pages daily, respecting rate limits and archiving each snapshot with timestamps for reproducibility.
+
+Although only Germany is modelled in depth within this report (case studies: Bavaria and North Rhine–Westphalia), the data pipeline is pan-European by design, capable of seamlessly extending to additional EU markets as harmonisation schemas are already in place.
+
+**Warehouse design (DuckDB)** 
+
+All harmonised data are stored in lightweight DuckDB databases hosted locally (databases/).
+DuckDB was chosen for its columnar execution engine and tight integration with R’s DBI package, which allows direct SQL-based transformations, lag feature construction, and temporal aggregation without exporting large intermediate files. This architecture ensures reproducibility while remaining efficient on commodity hardware.
+
+The data model is intentionally simple:
+	•	stations.duckdb — a unified cross-country registry of station metadata, including UUID, brand, coordinates, postcode, municipality, and static attributes such as the number of nearby stations within 1 km (for spatial queries).
+	•	Per-country price stores — e.g. german_fuel.duckdb, austrian_fuel_database.duckdb, and slovenian_fuel_database.duckdb, each containing hourly Diesel price series aligned to the shared schema.
+
+This setup supports over 200 million station-hour observations, enabling scalable analysis and dynamic data subsetting for regional modelling.
+
+**Harmonisation and quality control** 
+
+Given the heterogeneity of the source portals, we enforce a common vocabulary and a consistent temporal base.
+All processing steps are performed within the DuckDB ingestion scripts, using SQL and R preprocessing pipelines. The harmonisation protocol applies the following rules:
+
+	•	Time base. All timestamps are converted to UTC align across countries and facilitate lag construction during modelling.
+	•	Data cleaning. Malformed entries and implausible prices (outside €0.50–€10) are removed. Stations lacking valid coordinates are excluded.
+	•	Deduplication. Coordinates are rounded to five decimal places, and duplicate station–time records are collapsed to preserve only the most recent observation per hour.
+	•	Competition metrics. For cross-sectional analysis, the number of stations within a 1 km radius is precomputed using great-circle distance joins and stored alongside station metadata for later spatial feature engineering.
+
+A process diagram illustrating the end-to-end pipeline—spanning national API collection → raw JSON/CSV → harmonisation → DuckDB storage → modelling subset generation—is included in Appendix A.
+
+Reproducibility note. All scrapers are automated via nightly cron jobs with timestamped file naming (YYYY-MM-DD_HH-MM) and heartbeat monitoring. Operational details are documented in the project repository; here we focus on conceptual and methodological aspects relevant to econometric modelling.
+
+#### 4.2 Overview of the Unified Databases
+
+Table 4.1 summarises the scope of the harmonised datasets currently available for modelling. Counts reflect raw station-level price records stored in the DuckDB warehouse as of October 2025.
+
+| Country  | Approx. stations | Observations (price records) | Time range (current) | Fuel types | Primary source |
+|----------|------------------|------------------------------|----------------------|------------|----------------|
+| Germany  | 15,060           | 189.9 million                | Jul/2024 – Sep/2025  | Diesel, Gasoline 95, Gasoline 98 | MTS-K / Tankerkönig |
+| Austria  | 5,787            | 4.7 million                  | Aug/2024 – Oct/2025  | Diesel, Gasoline 95, Gasoline 98 | ÖAMTC + partners |
+| Slovenia | 545              | 88,700                       | Aug/2025 – Oct/2025  | Diesel, Gasoline 95 | goriva.si |
+
+Germany’s data feed is event-based, where each recorded price change generates a new observation.
+To align this with the lower-frequency datasets of Austria and Slovenia, prices are aggregated to hourly resolution, selecting the latest available observation per station per hour.
+This preserves intra-day variation while ensuring cross-country comparability.
+Austria and Slovenia, by contrast, operate under regulated pricing frameworks with daily or every four-hour cycles, producing cleaner but sparser time series.
+
+Each observation in the harmonised warehouse follows:
+
+\text{Observation} = \{\text{datetime}, \text{station\_uuid}, \text{fuel\_type}, \text{price}, \text{brand}, \text{latitude}, \text{longitude}, \text{zip\_code}, \text{country}\}
+
+While the warehouse itself stores harmonized raw observations, additional analytical features—including local competition indices, brand network scale, and temporal lag variables—are introduced later in the modelling and feature engineering phase (see Section 5).
+These derived features enhance both the interpretability (in linear and GAM frameworks) and predictive accuracy (in XGBoost and neural models) of the comparative analyses undertaken in this project.
+  
+#### 4.3 Temporal and Spatial Exploration Across Countries
+
+Exploratory visualisations contextualise the heterogeneity before model fitting. (Figures referenced here were generated from the aggregated datasets.)
+
+##### 4.3.1 Spatial distribution of prices
+
+A spatial choropleth of average diesel price across all countries (`spatial_price_map.png`) reveals:
+
+- Elevated prices in southern Germany and western Austria, consistent with alpine transport costs and tourism demand.
+- Flattened price surfaces in dense urban corridors (Munich, Vienna) where competition compresses margins.
+- Discontinuities along the Slovenia and Czechia borders, hinting at cross-border tax effects noted in the literature.
+- Moderately priced northern German states (Lower Saxony, Schleswig-Holstein) aided by refinery proximity.
+
+These findings justify spatial smooths (latitude/longitude) and competition features in later models.
+
+##### 4.3.2 Temporal dynamics
+
+4.3.2 Temporal Dynamics
+Temporal aggregations (Figures price_by_hour.png, price_by_day_of_week.png, price_by_month.png) reveal consistent yet country-specific rhythms in retail fuel pricing across the three markets.
+
+	•	Hourly variation.
+Germany’s event-driven feed produces smooth diurnal cycles, with diesel prices rising by roughly 2–3 cents/litre (ct/L) between early morning (06:00–09:00) and mid-day peaks, before easing by late evening (22:00–23:00). This pattern aligns with commuter demand and station-level repricing behaviour. Austria exhibits more irregular hourly swings—often ±4 ct/L—suggesting batched updates or delayed synchronization from the national aggregator. Slovenia shows negligible within-day volatility, reflecting its regulated pricing structure and fixed daily rates.
+
+	•	Day-of-week effects.
+In Germany, a mid-week trough (Tuesday–Wednesday) followed by weekend mark-ups of about 1–1.5 ct/L recurs throughout the sample, echoing previously documented price-cycling behaviour in competitive markets. Austria demonstrates a different rhythm—brief spikes on Tuesdays (up to +2 ct/L) that likely coincide with coordinated chain-wide updates, whereas Slovenia’s mild weekend increases (≈ +1 ct/L) reflect regulatory lag or limited competitive repricing.
+
+	•	Monthly trends.
+Seasonal cycles are evident across all countries. Germany shows winter highs (December–January) exceeding summer minima by nearly 6–7 ct/L, with a secondary rise in July–August tied to tourism traffic. Austria’s pattern is similar but more pronounced, peaking in the cold months and declining steadily through spring. Slovenia, though observed for a shorter period, follows a comparable upward trajectory toward summer, consistent with increased mobility and cross-border demand.
+
+These temporal regularities—daily cycles, weekly behavioural resets, and annual seasonality—justify incorporating cyclic covariates (hour, weekday, month) and lagged price features (1 hour, 1 day, 1 week) in the modelling framework. Together they allow the models to capture both short-term persistence and longer-term cyclical structure in retail diesel pricing dynamics.
+
+#### 4.4 Regional Focus: Bavaria and North Rhine–Westphalia (NRW)
+
+To evaluate models under contrasting competitive regimes, we zoom in on two German states from the warehouse: Bavaria (postcode prefix “8”) and NRW (prefixes “4”–“5”). Both datasets originate from the same Tankerkönig feed but differ markedly in geography and station density.
+
+##### 4.4.1 Regional characteristics
+
+| Characteristic            | Bavaria              | North Rhine–Westphalia |
+|---------------------------|----------------------|------------------------|
+| Location                  | Southern Germany     | Western Germany        |
+| Terrain                   | Alpine, rural–touristic | Industrial–urban, dense |
+| Stations (diesel)         | ~1,500               | ~3,550                 |
+| Avg. diesel price (€)     | 1.61                 | 1.58                   |
+| Standard deviation        | 0.07                 | 0.07                   |
+| Nearby stations (1 km avg)| 1.07                 | 1.06                   |
+| Dominant brands           | Aral, Shell, Agip, Esso, OMV | Aral, Shell, Esso, Total, Star |
+
+Bavaria’s alpine geography and longer transport routes sustain higher average prices and stronger seasonal cycles. NRW, Germany’s most populous state, houses multiple refineries and exhibits intense competition, making it an ideal benchmark for testing model sensitivity to station density.
+
+##### 4.4.2 District-level heatmaps
+
+District-level aggregations highlight intra-state heterogeneity:
+
+- **Bavaria:** southern alpine districts (e.g., Garmisch-Partenkirchen, Berchtesgadener Land) show higher averages due to delivery costs and limited competition, whereas motorway corridors near Nürnberg and Regensburg trend lower.
+- **NRW:** the price surface is flatter, with modest uplifts near Düsseldorf/Cologne (urban rents) and small discounts in peripheral districts.
+
+These patterns reinforce the inclusion of spatial smooths (longitude, latitude) and competition metrics in GAMs and tree-based models.
+
+#### 4.5 Transition to Modelling
+
+The exploratory evidence underscores strong spatial, temporal, and brand-level structures in European diesel pricing:
+
+- Prices fluctuate hourly and weekly with consumer demand cycles.
+- Geography and station density impose persistent spatial gradients.
+- Brand networks and competitive intensity materially affect observed prices.
+
+Consequently, the modelling pipeline progresses from interpretable linear regressions to smooth GAMs and, finally, high-capacity learners (XGBoost, deep neural networks), ensuring both explanatory insight and predictive capability.
+
+
