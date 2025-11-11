@@ -142,20 +142,17 @@ These derived features enhance both the interpretability (in linear and GAM fram
 
 Exploratory visualisations contextualise the heterogeneity before model fitting. (Figures referenced here were generated from the aggregated datasets.)
 
-##### 4.3.1 Spatial distribution of prices
+##### 4.3.1 Spatial coverage of stations
 
-A spatial choropleth of average diesel price across all countries (`spatial_price_map.png`) reveals:
+The harmonised warehouse provides near-complete spatial coverage of retail fuel stations across the three scraped countries (Germany, Austria, and Slovenia) as of October 2025 (Figure 4.3).
+	•	Germany exhibits the densest network, with a continuous distribution of stations across both urban and rural areas. Major clusters appear around metropolitan corridors such as the Rhine–Ruhr and Munich regions, ensuring broad representativeness for spatial modelling.
+	•	Austria shows consistent coverage concentrated along major transport axes (e.g., Vienna–Linz–Salzburg corridor) and alpine valleys, reflecting the national road hierarchy and population density.
+	•	Slovenia, while smaller in spatial extent, maintains full coverage along motorway routes and border crossings, enabling cross-border comparative analysis.
 
-- Elevated prices in southern Germany and western Austria, consistent with alpine transport costs and tourism demand.
-- Flattened price surfaces in dense urban corridors (Munich, Vienna) where competition compresses margins.
-- Discontinuities along the Slovenia and Czechia borders, hinting at cross-border tax effects noted in the literature.
-- Moderately priced northern German states (Lower Saxony, Schleswig-Holstein) aided by refinery proximity.
-
-These findings justify spatial smooths (latitude/longitude) and competition features in later models.
+Overall, the dataset captures a spatially balanced and high-resolution network, suitable for fine-grained modelling of regional price dynamics. The completeness of station locations underpins later analyses that employ spatial smooths (latitude–longitude) and competition metrics to explain variation in retail fuel prices.
 
 ##### 4.3.2 Temporal dynamics
 
-4.3.2 Temporal Dynamics
 Temporal aggregations (Figures price_by_hour.png, price_by_day_of_week.png, price_by_month.png) reveal consistent yet country-specific rhythms in retail fuel pricing across the three markets.
 
 	•	Hourly variation.
@@ -187,14 +184,23 @@ To evaluate models under contrasting competitive regimes, we zoom in on two Germ
 
 Bavaria’s alpine geography and longer transport routes sustain higher average prices and stronger seasonal cycles. NRW, Germany’s most populous state, houses multiple refineries and exhibits intense competition, making it an ideal benchmark for testing model sensitivity to station density.
 
-##### 4.4.2 District-level heatmaps
+#### 4.4.2 District-level Heatmaps
 
-District-level aggregations highlight intra-state heterogeneity:
+Spatial aggregation at the district level reveals clear **intra-regional heterogeneity** in diesel prices across both Bavaria and North Rhine–Westphalia (NRW) for the study period (Aug 2024 – Jul 2025).
 
-- **Bavaria:** southern alpine districts (e.g., Garmisch-Partenkirchen, Berchtesgadener Land) show higher averages due to delivery costs and limited competition, whereas motorway corridors near Nürnberg and Regensburg trend lower.
-- **NRW:** the price surface is flatter, with modest uplifts near Düsseldorf/Cologne (urban rents) and small discounts in peripheral districts.
+- **Bavaria.**  
+  The spatial price surface displays a pronounced **south–north gradient**, with higher average prices concentrated in **southern alpine districts** (e.g., Garmisch-Partenkirchen, Berchtesgadener Land) and parts of Upper Bavaria. These uplifts are consistent with **higher distribution and transport costs**, as well as **lower local competition density** in mountainous and rural areas. In contrast, **northern and central corridors** near **Nürnberg, Regensburg, and Ingolstadt** exhibit systematically lower averages—reflecting **dense retail competition** and major **motorway logistics routes**.
 
-These patterns reinforce the inclusion of spatial smooths (longitude, latitude) and competition metrics in GAMs and tree-based models.
+- **North Rhine–Westphalia (NRW).**  
+  The price field is **spatially flatter**, consistent with the region’s compact geography and dense fuel retail network. Nonetheless, **urban clusters** around **Düsseldorf, Cologne, and the Ruhrgebiet** register slightly higher prices, likely linked to **urban cost premiums** and **congestion externalities**, while **peripheral districts** toward the **north and southwest** show marginally lower prices, indicative of stronger competitive pressure and easier wholesale access.
+
+Together, these heatmaps corroborate the **spatial heterogeneity** captured later by the regression models: the inclusion of **longitude–latitude polynomials** and **competition metrics** (e.g., nearby stations within 1 km) in subsequent GAM and machine-learning models is empirically justified.  
+They also illustrate the contrasting **geographic and market structures** of the two states—Bavaria’s dispersed alpine topology versus NRW’s integrated urban corridor—underpinning the region-specific spatial patterns observed in model coefficients.
+
+---
+
+**Figure 4.4.2.**  
+Bavaria (top) and North Rhine–Westphalia (bottom): Average diesel price by district, Aug 2024 – Jul 2025.
 
 #### 4.5 Transition to Modelling
 
@@ -252,40 +258,80 @@ The following transformations are applied:
 #### Table 5.1 Variable Definitions
 
 | **Symbol / name** | **Definition / Construction and Source** |
-|:------------------|:----------------------------------------|
+|:------------------|:-----------------------------------------|
 | \(p_{it}\) | Retail diesel price (€ / L) at station *i* and hour *t* (latest hourly record). Derived from `german_fuel.duckdb` via `arg_max(diesel, date)`. |
-| \( \mathbf{1}\{month(t)=m\} \) | Month fixed effects (Jan–Dec) derived from timestamp. |
-| \( \mathbf{1}\{weekday(t)=d\} \) | Day-of-week fixed effects (Sun–Sat) derived from timestamp. |
-| \( \mathbf{1}\{hour(t)=h\} \) | Hour-of-day fixed effects (0–23) derived from timestamp. |
-| \( \mathbf{1}\{Zip2_i=z\} \) | Sub-region fixed effects using 2nd & 3rd postcode digits (district identifiers). From `stations.duckdb`. |
-| \(lon_i, lat_i\) | Station longitude / latitude from `stations.duckdb`. |
-| \( \mathbf{1}\{BrandCat_i=b\} \) | Brand categories: top 10 brands as named factors; others grouped by network size. Constructed in modelling script. |
+| **Seasonality (LM-1)** | **Ordered-factor polynomial contrasts** for Month and Weekday: \(\{\text{Month}^{(k)}_t\}_{k=1..K_M}\) and \(\{\text{Weekday}^{(k)}_t\}_{k=1..K_W}\), where \(k=\) L (linear), Q (quadratic), etc. Created by `month(date, label=TRUE)` and `wday(date, label=TRUE)` without coercion. |
+| **Seasonality (LM-2/LM-3)** | **Unordered dummies** for Month and Weekday: \(\mathbf{1}\{month(t)=m\}\) and \(\mathbf{1}\{weekday(t)=d\}\) (one level omitted as reference). Produced by `as.character(...)` before modeling. |
+| \(\mathbf{1}\{hour(t)=h\}\) | Hour-of-day fixed effects (0–23) derived from timestamp (one level omitted as reference). |
+| \(\mathbf{1}\{Zip2_i=z\}\) | Sub-region fixed effects using 2nd & 3rd postcode digits (district identifiers). From `stations.duckdb` (one level omitted as reference). |
+| \(lon_i, lat_i\) (LM-2) | Linear longitude/latitude controls in LM-2 only. From `stations.duckdb`. |
+| \(\text{poly}(lon_i,3)_r,\ \text{poly}(lat_i,3)_r\) (LM-3) | **Orthogonal polynomial basis (degree 3, \(r=1,2,3\))** for longitude/latitude used in LM-3 instead of linear lon/lat. Constructed via `poly(longitude,3)` and `poly(latitude,3)`. |
+| \(\mathbf{1}\{BrandCat_i=b\}\) | Brand categories: top brands as named factors; others grouped by network size. Constructed in modeling script (one level omitted as reference). |
 | \(nearby1km_i\) | Count of other stations within 1 km (competition proxy). Pre-computed in `stations.duckdb`. |
-| \(n_i, \log n_i\) | Brand network size (station count per brand) and its logarithm. Computed in script. |
-| \(p_{i,t-1h}, p_{i,t-24h}, p_{i,t-168h}\) | Station-specific price lags (1 h, 1 d, 1 w). Created prior to dataset splitting. |
-| \( \varepsilon_{it} \) | Mean-zero error term. |
+| \(n_i,\ \log n_i\) | Brand network size (station count per brand) and its logarithm; both used in LM-3. Computed in script. |
+| \(p_{i,t-1h},\ p_{i,t-24h},\ p_{i,t-168h}\) | Station-specific price lags (1 h, 1 d, 1 w). Created prior to dataset splitting. |
+| \(\varepsilon_{it}\) | Mean-zero error term. |
 
-### 5.4 Model Specification
+### 5.4 Linear Models (LM-1 → LM-3): Specifications
 
-To ensure interpretability and incremental complexity, we estimate three nested Ordinary Least Squares (OLS) models.
+**Contrast/encoding conventions.**
+- In **LM-1**, `month(date, label=TRUE)` and `wday(date, label=TRUE)` are **ordered factors**, so R uses **orthogonal polynomial contrasts** (`.L`, `.Q`, …). Coefficients represent linear, quadratic, … components over the seasonal cycle rather than single-month dummies.
+- In **LM-2** and **LM-3**, `as.character()` forces **unordered factors** (one-hot dummies) for **Month** and **Weekday** (effects are **relative to a reference level**).
+- In **LM-3**, spatial location is modeled with **orthogonal cubic polynomials** of longitude/latitude (not the raw linear lon/lat terms), and station scale is modeled with **both** `n_i` and `log n_i`.
 
 #### 5.4.1 LM-1 (Calendar and Sub-region)
+We regress price on temporal seasonality and sub-region, with ordered-factor polynomial contrasts for Month and Weekday:
 \[
-p_{it} = \alpha + Month_t + Weekday_t + Hour_t + Zip2_i + \varepsilon_{it}
+p_{it}
+= \alpha
++ \sum_{k=1}^{K_M} \theta_k\,\text{Month}^{(k)}_t
++ \sum_{k=1}^{K_W} \psi_k\,\text{Weekday}^{(k)}_t
++ \sum_{h\in\mathcal H}\eta_h\,\mathbf{1}\{Hour_t=h\}
++ \sum_{z\in\mathcal Z}\xi_z\,\mathbf{1}\{Zip2_i=z\}
++ \varepsilon_{it},
 \]
+where \(\text{Month}^{(k)}_t\) and \(\text{Weekday}^{(k)}_t\) denote the **orthogonal polynomial** components (e.g., \(k=\) L, Q, …) of the ordered factors, and Hour/Zip2 enter as standard dummies.
 
 #### 5.4.2 LM-2 (+ Location, Brand, Competition)
+Here Month and Weekday become **unordered dummies**; we add linear coordinates, brand, local competition, and station count:
 \[
-p_{it} = \text{LM-1 terms} + \beta_1 lon_i + \beta_2 lat_i + BrandCat_i + \gamma nearby1km_i + \delta n_i + \varepsilon_{it}
+\begin{aligned}
+p_{it}
+&= \alpha
++ \sum_{m\in\mathcal M}\beta_m\,\mathbf{1}\{Month_t=m\}
++ \sum_{w\in\mathcal W}\gamma_w\,\mathbf{1}\{Weekday_t=w\} \\
+&\quad + \sum_{h\in\mathcal H}\eta_h\,\mathbf{1}\{Hour_t=h\}
++ \sum_{z\in\mathcal Z}\xi_z\,\mathbf{1}\{Zip2_i=z\} \\
+&\quad + \beta_{lon}\,lon_i + \beta_{lat}\,lat_i
++ \sum_{b\in\mathcal B}\delta_b\,\mathbf{1}\{BrandCat_i=b\} \\
+&\quad + \gamma_{c}\,nearby1km_i
++ \delta_{n}\,n_i
++ \varepsilon_{it}.
+\end{aligned}
 \]
 
-#### 5.4.3 LM-3 (+ Lags and Spatial Polynomials)
+#### 5.4.3 LM-3 (+ Lags and **Spatial Polynomials**)
+We **replace** the linear lon/lat terms with **orthogonal cubic polynomials**, add short-run price lags, and allow a nonlinear station-scale effect via both \(n_i\) and \(\log n_i\). Month/Weekday remain unordered dummies:
 \[
-p_{it} = \text{LM-2 terms} + \phi_1 p_{i,t-1h} + \phi_2 p_{i,t-24h} + \phi_3 p_{i,t-168h} + poly(lon_i, 3) + poly(lat_i, 3) + \log n_i + \varepsilon_{it}
+\begin{aligned}
+p_{it}
+&= \alpha
++ \sum_{m\in\mathcal M}\beta_m\,\mathbf{1}\{Month_t=m\}
++ \sum_{w\in\mathcal W}\gamma_w\,\mathbf{1}\{Weekday_t=w\}
++ \sum_{h\in\mathcal H}\eta_h\,\mathbf{1}\{Hour_t=h\}
++ \sum_{z\in\mathcal Z}\xi_z\,\mathbf{1}\{Zip2_i=z\} \\
+&\quad + \sum_{r=1}^{3}\big(\pi^{lon}_r\,\text{poly}(lon_i,3)_r
++ \pi^{lat}_r\,\text{poly}(lat_i,3)_r\big) \\
+&\quad + \sum_{b\in\mathcal B}\delta_b\,\mathbf{1}\{BrandCat_i=b\}
++ \gamma_{c}\,nearby1km_i \\
+&\quad + \phi_{1}\,p_{i,t-1h} + \phi_{2}\,p_{i,t-24h} + \phi_{3}\,p_{i,t-168h}
++ \delta_{n}\,n_i + \delta_{\log}\,\log n_i
++ \varepsilon_{it}.
+\end{aligned}
 \]
 
-We report \(R^2\), RMSE (validation / test), and BIC.  
-LM-3 represents the strongest linear baseline and defines the **feature set** for all nonlinear models.
+**Reported metrics.** We report \(R^2\), RMSE (validation/test), and BIC.  
+**Model role.** LM-3 is our strongest linear baseline and defines the feature set for subsequent nonlinear models.
 
 ---
 
@@ -338,4 +384,186 @@ Cyclical time features are encoded using sine–cosine transformations to preser
 ---
 
 ## Results and Discussion
+
+### 6.1 Linear models
+
+Linear Models 1–3: Key Coefficients and Interpretation
+
+To focus on practical importance, we rank terms by the absolute value of the estimated coefficient (|β|), excluding the intercept. Only terms with conventional statistical significance (Pr(>|t|) ≤ 0.05) are listed. This highlights predictors with the largest per-unit impact on price on the original price scale.
+
+#### Model 1 — Temporal and Regional Seasonality
+
+::: columns
+::: column
+##### Bavaria — Top 5 by |β|
+| Coefficient (Term) | Bavaria β |
+|--------------------|----------:|
+| `month(date)… .L`  | -0.0966 |
+| `factor(hour(date))9`  | -0.0891 |
+| `factor(hour(date))17` | -0.0865 |
+| `factor(hour(date))19` | -0.0856 |
+| `factor(hour(date))15` | -0.0855 |
+:::
+
+::: column
+##### NRW — Top 5 by |β|
+| Coefficient (Term) | NRW β |
+|--------------------|------:|
+| `month(date)… .Q`  |  0.0935 |
+| `factor(hour(date))19` | -0.0877 |
+| `factor(hour(date))17` | -0.0868 |
+| `factor(hour(date))18` | -0.0841 |
+| `factor(hour(date))15` | -0.0832 |
+:::
+:::
+
+
+*Interpretation.*  
+Across both regions, intra-day patterns dominate: late-afternoon/evening hours (15–20h) carry the largest negative adjustments relative to the reference hour, indicating systematically lower prices at those times. Seasonal components matter as well: Bavaria’s strong linear (L) month trend (−0.0966) suggests a clear monotonic seasonal slope; NRW’s quadratic (Q) month component (+0.0935) indicates curvature around the seasonal cycle. ZIP-2 fixed effects contribute, but are secondary to the hour-of-day profile.
+
+
+#### Model 2 — + Brand, Coordinates, Competition
+
+::: columns
+::: column
+##### Bavaria — Top 5 by |β|
+| Coefficient (Term) | Bavaria β |
+|--------------------|----------:|
+| `factor(hour(date))9`  | -0.0888 |
+| `factor(hour(date))17` | -0.0869 |
+| `factor(hour(date))19` | -0.0861 |
+| `factor(hour(date))20` | -0.0857 |
+| `factor(hour(date))15` | -0.0857 |
+:::
+
+::: column
+##### NRW — Top 5 by |β|
+| Coefficient (Term) | NRW β |
+|--------------------|------:|
+| `brand_categorysmall` |  0.6728 |
+| `as.character(month)… Jan` | 0.1144 |
+| `as.character(month)… Feb` | 0.1130 |
+| `factor(hour(date))19` | -0.0910 |
+| `factor(hour(date))17` | -0.0896 |
+:::
+:::
+
+*Interpretation.*  
+Adding brand, geography, and competition preserves the strong diurnal pattern in Bavaria (hours 15–20 remain the dominant drivers). In NRW, brand and month levels become highly salient: small brand stations price higher on average (+0.673), and January/February mark sizeable positive seasonal lifts (+0.114 / +0.113). These effects sit alongside (not instead of) the robust hour-of-day dips. Latitude/longitude enter with modest linear effects (e.g., Bavaria latitude −0.0365), and local competition (nearby_station_1km) is small but significant in Bavaria (+0.00022), consistent with slight upward price pressure when a neighbor is very close (e.g., positioning/branding dynamics). Station count (n_stations) has tiny coefficients, indicating limited direct linear effect once brand and time controls are present.
+
+
+#### Model 3 — + Temporal Lags & Nonlinear Spatial Polynomials
+
+::: columns
+::: column
+##### Bavaria — Top 5 by |β|
+| Coefficient (Term) | Bavaria β |
+|--------------------|----------:|
+| `poly(longitude, 3)1` | -6.1586 |
+| `poly(latitude, 3)1`  | -5.6883 |
+| `poly(longitude, 3)3` |  5.3678 |
+| `poly(longitude, 3)2` |  3.2359 |
+| `diesel_lag_1h`       |  0.3626 |
+:::
+
+::: column
+##### NRW — Top 5 by |β|
+| Coefficient (Term) | NRW β |
+|--------------------|------:|
+| `poly(latitude, 3)2` |  1.6160 |
+| `poly(latitude, 3)3` | -1.2835 |
+| `poly(longitude, 3)3`| -1.1081 |
+| `poly(longitude, 3)2`|  0.5454 |
+| `poly(longitude, 3)1`| -0.4405 |
+:::
+:::
+
+*Interpretation.*  
+
+Introducing price lags and nonlinear spatial structure materially changes the ranking of influential terms:
+	•	Spatial gradients are now dominant. Large-magnitude polynomial terms show strong nonlinear East–West/North–South structure in both Bavaria and NRW (e.g., Bavaria poly(longitude,3){1,3,2} and NRW poly(latitude,3){2,3} / poly(longitude,3){3,2,1}). This indicates location-dependent curvature in prices that simple linear coordinates could not capture.
+	•	Temporal persistence remains strong. In Bavaria, diesel_lag_1h is among the top five (+0.3626), with additional positive persistence at daily and weekly horizons (+0.2563; +0.1620). In NRW the 1-hour lag is also large and highly significant (+0.4276), narrowly outside the top-five only because the spatial polynomials dominate by |β|.
+	•	Diurnal pattern persists but is partially absorbed. Hour dummies (e.g., Bavaria hours 9/15/17 ≈ −0.045 to −0.041; NRW hours 14–19 ≈ −0.045 to −0.049) remain negative and significant, consistent with systematically lower evening prices even after accounting for short-term persistence and spatial curvature.
+
+#### Cross-Region Takeaways
+
+- **Without lags (LM-1/2):** **Hour-of-day** dominates in both regions; NRW shows stronger **month-level** effects than Bavaria once brands are added.  
+- **Brand structure (LM-2):** NRW’s `brand_categorysmall` indicates a **higher price level** for small-brand stations, conditional on time and location; Bavaria’s brand differences are more modest.  
+- **With lags & nonlinear space (LM-3):** **Spatial heterogeneity** explains substantial variation (large polynomial β’s), while **1-hour price persistence** remains a key predictor.  
+- **Regional geography:** Bavaria shows pronounced **East–West** curvature (longitude polynomials); NRW shows strong **North–South** curvature (latitude polynomials), aligning with each region’s layout and market density.
+
+
+#### Linear models comparison
+
+::: {#tbl-linear-metrics tbl-cap="Linear model comparison (lower RMSE/BIC indicates better fit)"}
+| Region  | Model | RMSE (Validation) | RMSE (Test) | R²    | BIC             |
+|:--------|:------|-------------------:|------------:|------:|----------------:|
+| Bavaria | LM-1  | 0.0523             | 0.0594      | 0.4477 | -13,681,766.25  |
+| Bavaria | LM-2  | 0.0503             | 0.0577      | 0.4883 | -14,021,695.41  |
+| **Bavaria** | **LM-3**  | **0.0346**         | **0.0354**  | **0.7545** | **-16,770,314.29** |
+| NRW     | LM-1  | 0.0505             | 0.0579      | 0.5169 | -20,682,325.65  |
+| NRW     | LM-2  | 0.0485             | 0.0562      | 0.5542 | -21,214,623.94  |
+| **NRW** | **LM-3**  | **0.0378**         | **0.0386**  | **0.7310** | **-23,820,511.90** |
+:::
+
+**Interpretation.** 
+
+Model performance improves monotonically from LM-1 to LM-3 as additional spatial and temporal features are introduced. The inclusion of geographic coordinates, brand, and competitive factors in LM-2 enhances explanatory power by roughly 4–5 percentage points in R² across both regions. Incorporating lagged price terms and nonlinear spatial polynomials in LM-3 produces the most substantial improvement—boosting R² to approximately 0.75 in Bavaria and 0.73 in NRW, and reducing test RMSE by more than one-third relative to LM-1. These results confirm that **short-term price persistence and spatial heterogeneity** are critical drivers of diesel price variation, justifying LM-3 as the preferred linear baseline for subsequent non-linear modelling stages.
+
+### 6.2 GAM models
+
+::: {#fig-gam-bavaria layout-ncol=4 fig-cap="Partial smooth effects for the Bavaria GAM."}
+![](bavaria_diesel_gam_term1_s_diesel_lag_1h_.png)
+![](bavaria_diesel_gam_term2_s_diesel_lag_1d_.png)
+![](bavaria_diesel_gam_term3_s_diesel_lag_1w_.png)
+![](bavaria_diesel_gam_term4_s_month_num_.png)
+![](bavaria_diesel_gam_term5_s_wday_num_.png)
+![](bavaria_diesel_gam_term6_s_hour_num_.png)
+![](bavaria_diesel_gam_term7_s_longitude_latitude_.png)
+![](bavaria_diesel_gam_term8_s_n_stations_.png)
+![](bavaria_diesel_gam_term9_s_nearby_station_1km_.png)
+:::
+
+::: {#fig-gam-nrw layout-ncol=4 fig-cap="Partial smooth effects for the NRW GAM."}
+![](nrw_diesel_gam_term1_s_diesel_lag_1h_.png)
+![](nrw_diesel_gam_term2_s_diesel_lag_1d_.png)
+![](nrw_diesel_gam_term3_s_diesel_lag_1w_.png)
+![](nrw_diesel_gam_term4_s_month_num_.png)
+![](nrw_diesel_gam_term5_s_wday_num_.png)
+![](nrw_diesel_gam_term6_s_hour_num_.png)
+![](nrw_diesel_gam_term7_s_longitude_latitude_.png)
+![](nrw_diesel_gam_term8_s_n_stations_.png)
+![](nrw_diesel_gam_term9_s_nearby_station_1km_.png)
+:::
+**Figure 6.4.** Partial smooth effects from the GAMs for Bavaria and NRW. 
+
+The GAMs reveal consistent nonlinear patterns across Bavaria and North Rhine-Westphalia, extending the linear baselines by capturing smooth temporal and spatial dependencies.
+
+Lagged diesel prices (p_{i,t-1h}, p_{i,t-24h}, p_{i,t-168h}) exhibit strong persistence, with the one-hour lag dominating and daily/weekly lags contributing smaller yet positive effects—evidence of gradual pass-through and temporal smoothing in retail pricing.
+
+Seasonal components (s(month), s(wday), s(hour)) are nearly flat once lags are included, suggesting that short-term cycles are largely absorbed through the autoregressive structure. Spatial smooths (s(longitude, latitude)) capture broad regional gradients—higher predicted prices in southern Bavaria and around the Ruhr area—aligning with earlier heatmaps. Nonlinear effects of competition (s(nearby\_station\_1km)) and brand scale (s(n\_stations)) are limited.
+
+Overall, the GAM results confirm that price dynamics are primarily driven by temporal inertia and geographic variation, while residual seasonal or local competition effects are comparatively minor.
+
+### 6.3 XGBoost 
+
+### 6.5 Neural Network (DNN) results
+
+::: {#fig-nn-curves layout-ncol=2 fig-cap="Learning curves (MSE) for the DNN by region. Shaded gaps between training and validation indicate overfitting beyond the early epochs."}
+![](bavaria_diesel_nn3_learning_curve.png)
+![](nrw_diesel_nn3_learning_curve.png)
+:::
+
+::: {#tbl-nn-metrics tbl-cap="DNN performance by region (lower RMSE is better)."}
+| Region  | Model | RMSE (Validation) | RMSE (Test) | R² (Test) |
+|:--------|:------|-------------------:|------------:|----------:|
+| Bavaria | DNN   | 0.0387             | 0.0486      | 0.6875    |
+| NRW     | DNN   | 0.0367             | 0.0406      | 0.6866    |
+:::
+
+**Interpretation.**  
+- **General fit.** The DNN achieves **R² ≈ 0.69** in both regions, but **test RMSE is above the LM-3 baseline** (Bavaria: 0.0486 vs 0.0354; NRW: 0.0406 vs 0.0386), indicating that the linear model with lags and spatial polynomials remains **hard to beat** given this feature set and data size.  
+- **Learning dynamics.** Validation loss bottoms out **early** (≈ **epoch 5–7**), after which the widening gap to training loss signals **overfitting**. An earlier stopping point (or stronger regularization) would likely be optimal.  
+- **Takeaway.** With the same inputs, the DNN **does not outperform** the best linear baseline. If a neural model is desired, we should (i) add richer interactions/embeddings (e.g., brand and location embeddings), (ii) apply heavier regularization (dropout/weight decay), and (iii) tune batch size and learning rate with stratified time splits.
+
 

@@ -687,7 +687,7 @@ dvalid_3 <- xgb.DMatrix(data = valid_matrix_3, label = valid_response_vec_3)
 watchlist_3 <- list(train = dtrain_3, eval = dvalid_3)  # For early stopping monitoring
 
 # Train gradient boosting model with early stopping to prevent overfitting
-cat("  Training XGBoost model (max 2000 iterations, early stopping after 50 rounds)...\n")
+cat("  Training XGBoost model (max 500 iterations, early stopping after 50 rounds)...\n")
 xmdl_3_es <- xgb.train(
   params = list(objective = "reg:squarederror", eval_metric = "rmse"),
   data = dtrain_3,
@@ -732,7 +732,7 @@ if (isTRUE(save_model_files)) {
 # Compute SHAP values to explain individual predictions
 cat("  Computing SHAP values on a test sample...\n")
 set.seed(123)
-shap_sample_n <- min(50000, nrow(test_matrix_3))
+shap_sample_n <- min(2000, nrow(test_matrix_3))
 sample_idx <- sample(seq_len(nrow(test_matrix_3)), shap_sample_n)
 test_sample_mat <- test_matrix_3[sample_idx, , drop = FALSE]
 test_sample_y <- test_response_3[sample_idx]
@@ -744,6 +744,25 @@ shap_mean_abs <- sort(colMeans(abs(shap_df)), decreasing = TRUE)  # Average abso
 saveRDS(list(SHAP_MeanAbs = shap_mean_abs, SHAP_Sample = shap_df[1:min(1000, nrow(shap_df)), ]),
         file.path(results_dir, "nrw_diesel_xgb3_shap.rds"))
 cat(sprintf("    SHAP summary saved to: %s\n", file.path(results_dir, "nrw_diesel_xgb3_shap.rds")))
+
+shap_long <- shap_df |> mutate(Row = row_number()) |> pivot_longer(-Row, names_to = "Feature", values_to = "SHAP")
+value_long <- as_tibble(as.matrix(test_sample_mat)) |> mutate(Row = seq_len(n())) |> pivot_longer(-Row, names_to = "Feature", values_to = "Value")
+shap_plot <- shap_long |> left_join(value_long, by = c("Row", "Feature"))
+shap_rank <- shap_plot |> group_by(Feature) |> summarise(MeanAbs = mean(abs(SHAP))) |> arrange(desc(MeanAbs)) |> slice_head(n = 20)
+shap_plot <- shap_plot |> semi_join(shap_rank, by = "Feature") |> mutate(Feature = factor(Feature, levels = rev(shap_rank$Feature)))
+beeswarm_path <- file.path(results_dir, "nrw_diesel_xgb3_shap_beeswarm.png")
+png(beeswarm_path, width = 900, height = 600)
+print(
+  ggplot(shap_plot, aes(x = SHAP, y = Feature, colour = Value)) +
+    geom_violin(fill = NA, alpha = 0.3) +
+    geom_point(size = 0.6, alpha = 0.7) +
+    scale_colour_gradient(low = "purple", high = "gold") +
+    geom_vline(xintercept = 0, linetype = 2) +
+    labs(title = "SHAP beeswarm (NRW XGBoost)", x = "SHAP value", y = NULL, colour = "Feature value") +
+    theme_minimal()
+)
+dev.off()
+cat(sprintf("    SHAP beeswarm saved to: %s\n", beeswarm_path))
 
 # Save all metrics and results to RDS file for later analysis
 cat("  Saving XGBoost Model 3 results externally...\n")
