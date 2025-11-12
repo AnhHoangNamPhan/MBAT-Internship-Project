@@ -8,7 +8,7 @@ This project consolidates daily, station-level fuel price data from multiple pub
 ## Project Overview
 
 This repository is part of a broader research effort on **transparent and interpretable fuel price modelling** across European markets.  
-It combines data engineering, feature generation, and statistical modelling pipelines (GAM, XGBoost, DNN) to produce high-resolution estimates of retail diesel and gasoline prices under station level.
+It combines data engineering, feature generation, and statistical modelling pipelines (Generalized Additive Model - GAM, XGBoost, Deep Neural Networks - DNN) to produce high-resolution estimates of retail diesel and gasoline prices under station level.
 
 Key components include:
 
