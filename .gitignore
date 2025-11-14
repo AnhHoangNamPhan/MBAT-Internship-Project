@@ -50,6 +50,11 @@ cache_shell_italia/
 .idea/
 .cursor/
 
+# Python virtual environment
+.venv/
+venv/
+
 # Large model files (keep small ones, ignore large ones)
 *.rds
 databases/unified_fuel_data.duckdb
+databases/german_stations.csv
