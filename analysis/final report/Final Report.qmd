@@ -1,0 +1,1101 @@
+---
+title: "Toward Transparent Fuel Pricing: Estimating Station-Level Prices in Central Europe"
+subtitle: "Bavaria and North Rhine–Westphalia case studies with Linear Models, GAM, XGBoost, and Neural Networks"
+author: "Anh Hoang Nam Phan"
+date: "11-12-2025"
+
+format:
+  pdf:
+    toc: true
+    number-sections: true
+    geometry: margin=1in
+    keep-tex: true
+    pdf-engine: xelatex
+    fig-pos: 'H'
+    include-in-header:
+      text: |
+        \usepackage{array}
+        \usepackage{float}
+        \renewcommand{\arraystretch}{1.2}
+
+execute:
+  echo: false
+  warning: false
+  message: false
+
+crossref:
+  fig-prefix: Figure
+  tbl-prefix: Table
+
+fig-dpi: 300
+fig-format: png
+mainfont: "Helvetica"
+sansfont: "Helvetica"
+fontsize: 11pt
+---
+
+```{r}
+#| label: setup
+#| include: false
+
+library(tibble)
+library(dplyr)
+library(kableExtra)
+library(stringr)
+library(knitr)
+
+knitr::opts_chunk$set(
+  echo = FALSE,
+  warning = FALSE,
+  message = FALSE,
+  fig.align = "center"
+)
+options(knitr.table.format = "latex")
+```
+
+\newpage
+
+## Abstract
+
+Retail fuel-price dynamics in Europe embody a complex interplay of geography, brand strategy, consumer behavior and infrastructure‐driven constraints. This project presents a unified approach to generating a station-level fuel-price estimation framework across multiple European countries, beginning with Diesel prices in Germany and Austria and targeting a broader rollout to Central Europe. A major component is the creation of harmonised DuckDB databases for price streams and station metadata (locations, brands, competition measures) for Germany, Austria, Slovenia and Italy. With memory and computational constraints accounted for, we focus this analysis on two contrasting German regions: Bavaria, characterised by mountainous terrain, tourism-driven fuel consumption and lower station density, and North Rhine–Westphalia, representing a highly industrialised, urbanised and densely-stationed western market. We estimate and compare six models — three linear specifications, a Generalised Additive Model (GAM) with spatial and temporal smooths, an XGBoost ensemble and a dense neural network — using the same engineered features to facilitate fair comparison. Results reveal that temporal lags, brand network size and spatial competition metrics explain a large share of price variation, while regional choice meaningfully shifts coefficient magnitudes and model fit. The ensuing pipeline lays the groundwork for a consumer-facing web tool or policy dashboard that estimates station-level prices across Europe and supports transparency and market competition.
+
+## Introduction
+
+European fuel-price transparency initiatives have expanded access to station-level data, but cross-border analysis remains difficult due to incompatible schemas, uneven update cadences, and heterogeneous identifiers across national portals. These frictions limit comparative research and policy evaluation at the spatial and temporal resolution where pricing decisions are made.
+
+This project develops a harmonised, station-level data infrastructure and modelling framework for estimating retail Diesel prices across Central Europe. A unified DuckDB warehouse integrates national feeds (Germany, Austria, Slovenia, and Italy) into a consistent schema that supports reproducible feature generation and model comparison. We evaluate the framework in depth on two contrasting German regions — Bavaria and North Rhine–Westphalia (NRW) — to stress-test methods across different geographic and competitive environments.
+
+Beyond methodological contribution, the work is deployment-oriented: we design the pipeline to support a Shiny application for near–real-time estimation and explainability, aligning academic insight with consumer and regulatory use.
+
+## Motivation
+
+### Transparency, consumer welfare, and competition
+
+Transparent fuel pricing systems aim to lower search costs and mitigate information asymmetries between retailers and consumers. By allowing motorists to observe prices in near real-time, transparency initiatives can intensify price competition and improve allocative efficiency. However, transparency alone does not automatically translate into lower prices. Persistent switching frictions, behavioral inertia, or tacit coordination among firms may blunt competitive effects, leading to stable or even higher equilibrium prices despite full observability. Understanding how transparency interacts with market structure is thus crucial for evaluating the true welfare implications of open data mandates.
+
+### Fragmentation and the need for harmonised data
+
+Although most European markets operate under legal price reporting obligations and public APIs, data remain fragmented across jurisdictions. National systems differ in their structure, update frequency, station identifiers, and temporal resolution, posing challenges for reproducible research and cross-country benchmarking. A harmonised data warehouse mitigates these inconsistencies by unifying schema, standardising attributes, and facilitating scalable feature generation. This integration enables comparative studies, longitudinal monitoring, and the development of regionally transferable machine learning models for price forecasting.
+
+### Regional diversity and contrasting market structures
+
+Fuel retail markets within Europe display pronounced spatial heterogeneity. Bavaria's topographically dispersed and brand-concentrated network contrasts sharply with North Rhine–Westphalia's (NRW) dense, urban, and industrial landscape. Such diversity provides a natural laboratory to investigate how geography, competition density, and temporal persistence shape price formation. Comparative analysis across these contexts allows us to disentangle universal behavioural patterns from region-specific dynamics, improving the interpretability and generalisability of the modelling framework.
+
+### Towards an operational tool
+
+Beyond empirical analysis, this study contributes a practical blueprint for operationalising transparent fuel price analytics. By coupling harmonised data infrastructure with automated model retraining and a user-facing Shiny interface, the framework transitions from research to real-world application. The resulting system can deliver rolling forecasts, visual diagnostics, and interpretable price drivers—supporting policymakers, regulators, and consumers in monitoring competition and anticipating retail price movements.
+
+## Objectives
+
+1. **Data integration:** Build a harmonised DuckDB warehouse combining hourly price records and station metadata across Germany, Austria, Slovenia, and Italy.  
+2. **Feature engineering:** Create consistent temporal (hour, weekday, month, lags) and spatial (longitude, latitude, nearby stations, sub-regions) features.  
+3. **Model development and comparison:** Estimate and compare LM, GAM, XGBoost, and Deep Neural Networks under a unified feature regime using Bavaria and NRW as case studies.  
+4. **Interpretation and regional insight:** Quantify the roles of temporal persistence, brand structure, and spatial competition, and assess transferability across regions.  
+5. **Deployment pathway:** Specify a Shiny-based interface and model registry for near–real-time estimation and explainability.
+
+## Literature Review
+
+### Fuel-price determinants and transparency effects
+
+Retail fuel prices are shaped by a combination of input costs, tax regimes, logistical factors, and the degree of local market power. Existing studies highlight the asymmetry between wholesale and retail price transmission—commonly referred to as the rockets and feathers effect—whereby price increases are passed on more rapidly than decreases. Evaluations of price transparency interventions across Europe, such as the German Markttransparenzstelle or Austrian reporting schemes, reveal mixed outcomes. While greater transparency can enhance consumer awareness and stimulate competition, its ultimate impact depends on contextual factors including station density, urbanisation, and consumer switching behaviour. In some markets, transparency may even facilitate tacit coordination if firms adjust prices more synchronously under heightened visibility.
+
+### Spatial competition in station markets
+
+Spatial econometric and industrial organisation studies emphasise that geographic proximity and network density play a decisive role in shaping fuel price equilibria. Stations operating in densely populated or highly competitive zones tend to exhibit lower margins due to intensified rivalry, whereas those in rural or brand-dominated areas often retain greater pricing power. Empirical evidence from Germany and other European markets shows that the entry or exit of nearby competitors can measurably influence local prices, confirming the spatial interdependence of station-level pricing. Incorporating explicit competition metrics—such as the number of nearby stations within a defined radius—and spatial smoothing terms thus remains essential for capturing these dynamics.
+
+### Interpretable and machine-learning approaches 
+
+Recent advances in modelling have bridged traditional econometric transparency and modern predictive performance. Generalised Additive Models (GAMs) retain interpretability through smooth functions that capture spatial and temporal gradients, while ensemble methods such as XGBoost and neural networks deliver high predictive accuracy by learning complex nonlinear interactions. Comparative evaluations under harmonised feature sets allow researchers to disentangle improvements arising from model structure versus those from richer data engineering. Moreover, explainability techniques such as SHAP values increasingly enable black-box models to be interpreted within an econometric framework, enhancing their policy relevance.
+
+### Gaps addressed
+
+This study extends prior work in several important directions:
+
+-	It develops station-hour models that span multiple European jurisdictions, utilising a harmonised data warehouse to ensure cross-country comparability.
+	
+-	It integrates spatial competition, brand structure, and temporal persistence within a unified modelling framework, offering a comprehensive view of price dynamics.
+	
+-	It introduces an end-to-end deployment architecture, encompassing rolling retraining, model registry management, and a Shiny-based user interface for interactive estimation and explainability.
+
+Together, these contributions advance the empirical understanding of retail fuel pricing while establishing a reproducible and operational platform for continuous market monitoring and policy evaluation.
+
+## Data Overview and Exploratory Analysis
+
+### Data Sources and Scraping Pipeline
+
+The empirical foundation of this study is a unified, high-frequency database of European retail fuel prices constructed from national transparency portals and industry data feeds.
+Our primary focus is on Diesel prices at the station level across Germany, Austria, and Slovenia (with preliminary integration for Italy). Since 2014, several European states have adopted transparency legislation mandating the public disclosure of fuel price changes in near real time. These data streams are invaluable for consumers and researchers alike but differ substantially in format, update cadence, coverage, and station identifiers.
+Hence, cross-country comparability requires a careful process of data extraction, harmonisation, and integration.
+
+**National data sources:**
+
+- *Germany — Markttransparenzstelle für Kraftstoffe (MTS-K):*
+Germany's national fuel transparency platform, operated by the Federal Cartel Office, provides event-based data for all registered filling stations. Each price change triggers a real-time update containing station identifiers (UUIDs), brand, address, coordinates, and fuel type (Diesel, Super E5, and Super E10). Data are accessed via the Tankerkönig mirror API, which standardizes station metadata and price histories. Because of its event-driven structure, the German feed offers the highest temporal resolution and serves as the empirical foundation for the modelling analysis, particularly for the regional case studies of Bavaria and North Rhine–Westphalia.
+
+-	*Austria — ÖAMTC, ARBÖ, BP Austria, Shell, OMV (E-Control Preisvergleich):*
+Austria's national energy regulator, E-Control, operates a network of APIs that aggregates feeds from ÖAMTC, ARBÖ, BP Austria, Shell, OMV, and other licensed operators. The resulting JSON payloads include station metadata, operating hours, and Diesel/Super prices. R- and bash-based scrapers post to these APIs and ingest the responses into the harmonised schema used across the warehouse.
+
+- *Slovenia — goriva.si (Government Open Data Portal):*
+The Slovenian government maintains a comprehensive open dataset via the goriva.si portal, publishing national fuel prices for all major retail networks, including MOL, OMV Slovenija, and independent operators. The public API serves paginated JSON outputs listing station identifiers, coordinates, and current Diesel and Gasoline prices. Automated scripts (written in R) crawl the feed daily, respecting rate limits and archiving snapshots with timestamps for reproducibility and version control.
+
+**Warehouse design (DuckDB)** 
+
+All harmonised data are stored in lightweight DuckDB databases hosted locally (databases/).
+DuckDB was chosen for its columnar execution engine and tight integration with R's DBI package, which allows direct SQL-based transformations, lag feature construction, and temporal aggregation without exporting large intermediate files. This architecture ensures reproducibility while remaining efficient on commodity hardware.
+
+The data model is intentionally simple:
+
+- A unified cross-country station metadata database `stations.duckdb` — including UUID, brand, coordinates, postcode, municipality, and static attributes such as the number of nearby stations within 1 km (for spatial queries).
+	
+- Per-country price databases — e.g. `german_fuel.duckdb`, `austrian_fuel_database.duckdb`, and `slovenian_fuel_database.duckdb`, each containing hourly Diesel price series aligned to the shared schema.
+
+This setup supports over 200 million station-hour observations, enabling scalable analysis and dynamic data subsetting for regional modelling.
+
+**Harmonisation and quality control** 
+
+Given the heterogeneity of the source portals, we enforce a common vocabulary and a consistent temporal base.
+All processing steps are performed within the DuckDB ingestion scripts, using SQL and R preprocessing pipelines. The harmonisation protocol applies the following rules:
+
+- Time base - all timestamps are converted to UTC align across countries and facilitate lag construction during modelling.
+
+- Data cleaning - malformed entries and implausible prices (outside €0.50–€10) are removed. Stations lacking valid coordinates are excluded.
+
+-	Deduplication - coordinates are rounded to five decimal places, and duplicate station–time records are collapsed to preserve only the most recent observation per hour.
+	
+-	Competition metrics - for cross-sectional analysis, the number of stations within a 1 km radius is precomputed using great-circle distance joins and stored alongside station metadata for later spatial feature engineering.
+
+A process diagram illustrating the end-to-end pipeline—spanning national API collection $\rightarrow$ raw JSON/CSV $\rightarrow$ harmonisation $\rightarrow$ DuckDB storage $\rightarrow$ modelling subset generation—is included in Appendix A.
+
+Reproducibility note. All scrapers are automated via cron jobs with timestamped file naming (YYYY-MM-DD_HH-MM) for monitoring. Operational details are documented in the project repository; here we focus on conceptual and methodological aspects relevant to econometric modelling.
+
+### Overview of the Unified Databases
+
+```{r}
+#| label: tbl-harmonised-scope
+#| tbl-cap: "Scope of the harmonised DuckDB datasets (as of October 2025)"
+#| echo: false
+#| warning: false
+#| message: false
+library(tibble)
+library(dplyr)
+library(knitr)
+library(kableExtra)
+
+dat <- tribble(
+  ~Country, ~`Approx. stations`, ~`Observations (price records)`, ~`Time range (current)`, ~`Fuel types`,
+  "Germany", "15,060", "189.9 million", "Jul/2024 -- Sep/2025", "Diesel; Super E5; Super E10",
+  "Austria",  "5,787", "4.7 million",  "Aug/2024 -- Oct/2025", "Diesel; Gasoline 95; Gasoline 98",
+  "Slovenia", "545",   "88,700",       "Aug/2025 -- Oct/2025", "Diesel; Gasoline 95"
+)
+
+kbl(
+  dat,
+  booktabs   = TRUE,
+  longtable  = FALSE,
+  align      = c("l","r","r","l","l"),
+  escape     = FALSE,
+  col.names  = c(
+    "Country",
+    "Approx. stations",
+    "Observations (price records)",
+    "Time range (current)",
+    "Fuel types"
+  )
+) |>
+  kable_styling(
+    latex_options = "striped",
+    full_width    = FALSE,
+    position      = "center"
+  ) |>
+  column_spec(2, width = "2.4cm") |>
+  column_spec(3, width = "3.1cm") |>
+  column_spec(4, width = "3.2cm") |>
+  column_spec(5, width = "3.4cm")
+```
+
+Germany's data feed is event-based, where each recorded price change generates a new observation.
+To align this with the lower-frequency datasets of Austria and Slovenia, prices are aggregated to hourly resolution, selecting the latest available observation per station per hour.
+This preserves intra-day variation while ensuring cross-country comparability.
+Austria and Slovenia, by contrast, operate under regulated pricing frameworks with daily or every four-hour cycles, producing cleaner but sparser time series.
+
+Each observation in the harmonised warehouse follows:
+
+$$
+\text{Observation} = \{\text{datetime}, \text{station\_uuid}, \text{fuel\_type}, \text{price}, \text{brand}, \text{latitude}, \text{longitude}, \text{zip\_code}, \text{country}\}
+$$
+
+While the warehouse itself stores harmonized raw observations, additional analytical features—including local competition indices, brand network scale, and temporal lag variables—are introduced later in the modelling and feature engineering phase (see Section 5).
+These derived features enhance both the interpretability (in linear and GAM frameworks) and predictive accuracy (in XGBoost and neural models) of the comparative analyses undertaken in this project.
+  
+### Temporal and Spatial Exploration Across Countries
+
+Exploratory visualisations contextualise the heterogeneity before model fitting. (Figures referenced here were generated from the aggregated datasets.)
+
+#### Spatial coverage of stations
+
+The harmonised warehouse provides near-complete spatial coverage of retail fuel stations across the three scraped countries (Germany, Austria, and Slovenia) as of October 2025.
+
+::: {#fig-spatial-coverage layout-ncol=1 fig-cap="Spatial distribution of fuel stations across Germany, Austria, and Slovenia."}
+![](<../presentation/visualizations/station_distribution_map.png>)
+:::
+
+From @fig-spatial-coverage, we can see that:
+
+- Germany exhibits the densest network, with a continuous distribution of stations across both urban and rural areas. Major clusters appear around metropolitan corridors such as the Rhine–Ruhr and Munich regions, ensuring broad representativeness for spatial modelling.
+-	Austria shows consistent coverage concentrated along major transport axes (e.g., Vienna–Linz–Salzburg corridor) and alpine valleys, reflecting the national road hierarchy and population density.
+-	Slovenia, while smaller in spatial extent, maintains full coverage along motorway routes and border crossings, enabling cross-border comparative analysis.
+
+Overall, the dataset captures a spatially balanced and high-resolution network, suitable for fine-grained modelling of regional price dynamics. The completeness of station locations underpins later analyses that employ spatial smooths (latitude–longitude) and competition metrics to explain variation in retail fuel prices.
+
+#### Temporal dynamics
+
+The plots below reveal consistent yet country-specific rhythms in retail fuel pricing across the three markets.
+
+**Hourly variation**
+
+::: {#fig-price-hour layout-ncol=1 fig-cap="Hourly average diesel prices by country."}
+![](<../presentation/visualizations/price_by_hour.png>)
+:::
+
+From @fig-price-hour, we can infer that Germany's event-driven feed produces smooth diurnal cycles, with diesel prices rising by roughly 2–3 cents/litre (ct/L) between early morning (06:00–09:00) and mid-day peaks, before easing by late evening (22:00–23:00). This pattern aligns with commuter demand and station-level repricing behaviour. Austria exhibits more irregular hourly swings—often ±4 ct/L—suggesting batched updates or delayed synchronization from the national aggregator. Slovenia shows negligible within-day volatility, reflecting its regulated pricing structure and fixed daily rates.
+
+**Day-of-week effects**
+
+::: {#fig-price-weekday layout-ncol=1 fig-cap="Average diesel prices by day of week."}
+![](<../presentation/visualizations/price_by_day_of_week.png>)
+:::
+
+From @fig-price-weekday, we can infer that in Germany, a mid-week trough (Tuesday–Wednesday) followed by weekend mark-ups of about 1–1.5 ct/L recurs throughout the sample, echoing previously documented price-cycling behaviour in competitive markets. Austria demonstrates a different rhythm—brief spikes on Tuesdays (up to +2 ct/L) that likely coincide with coordinated chain-wide updates, whereas Slovenia's mild weekend increases (≈ +1 ct/L) reflect regulatory lag or limited competitive repricing.
+
+**Monthly trends**
+
+::: {#fig-price-month layout-ncol=1 fig-cap="Average diesel prices by month."}
+![](<../presentation/visualizations/price_by_month.png>)
+:::
+
+From @fig-price-month, it is shown that seasonal cycles are evident across all countries. Germany shows winter highs (December–January) exceeding summer minima by nearly 6–7 ct/L, with a secondary rise in July–August tied to tourism traffic. Austria's pattern is similar but more pronounced, peaking in the cold months and declining steadily through spring. Slovenia, though observed for a shorter period, follows a comparable upward trajectory toward summer, consistent with increased mobility and cross-border demand.
+
+These temporal regularities—daily cycles, weekly behavioural resets, and annual seasonality—justify incorporating cyclic covariates (hour, weekday, month) and lagged price features (1 hour, 1 day, 1 week) in the modelling framework. Together they allow the models to capture both short-term persistence and longer-term cyclical structure in retail diesel pricing dynamics.
+
+#### Regional Focus: Bavaria and North Rhine–Westphalia (NRW)
+
+To evaluate models under contrasting competitive regimes, we zoom in on two German states from the warehouse: Bavaria and NRW. Both datasets originate from the same Tankerkönig feed but differ markedly in geography and station density.
+
+```{r}
+#| label: tbl-region-summary
+#| tbl-cap: "Comparative summary of Bavaria and North Rhine–Westphalia."
+
+region_summary <- tibble::tribble(
+  ~Characteristic,               ~Bavaria,                          ~`North Rhine–Westphalia`,
+  "Location",                    "Southern Germany",                "Western Germany",
+  "Terrain",                     "Alpine, rural–touristic",         "Industrial–urban, dense",
+  "Stations (diesel)",           "1,500",                          "~3,550",
+  "Avg. diesel price (€)",       "1.61",                            "1.58",
+  "Standard deviation",          "0.07",                            "0.07",
+  "Nearby stations (1 km avg)",  "1.07",                            "1.06",
+  "Dominant brands",             "Aral, Shell, Agip, Esso, OMV",    "Aral, Shell, Esso, Total, Star"
+)
+
+kableExtra::kbl(
+  region_summary,
+  booktabs   = TRUE,
+  longtable  = TRUE,
+  align      = c("l","l","l"),
+  escape     = FALSE
+) |>
+  kableExtra::kable_styling(
+    full_width    = FALSE,
+    position      = "center",
+    latex_options = "striped"
+  )
+```
+
+Bavaria's alpine geography and longer transport routes sustain higher average prices and stronger seasonal cycles. NRW, Germany's most populous state, houses multiple refineries and exhibits intense competition, making it an ideal benchmark for testing model sensitivity to station density.
+
+##### District-level Heatmaps
+
+Spatial aggregation at the district level reveals clear intra-regional heterogeneity in diesel prices across both Bavaria and North Rhine–Westphalia (NRW) for the study period (Aug 2024 – Jul 2025).
+
+**Bavaria:**  
+
+::: {#fig-bavaria-heatmap layout-ncol=1 fig-cap="Average diesel price by district in Bavaria (Aug 2024 – Jul 2025)."}
+![](<../presentation/visualizations/bavaria_district_heatmap.png>)
+:::
+
+In @fig-bavaria-heatmap, the spatial price surface displays a pronounced south–north gradient, with higher average prices concentrated in southern alpine districts (e.g., Garmisch-Partenkirchen, Berchtesgadener Land) and parts of Upper Bavaria. These uplifts are consistent with higher distribution and transport costs, as well as lower local competition density in mountainous and rural areas. In contrast, northern and central corridors near Nürnberg, Regensburg, and Ingolstadt exhibit systematically lower averages—reflecting dense retail competition and major motorway logistics routes.
+
+**North Rhine–Westphalia (NRW):**  
+
+::: {#fig-nrw-heatmap layout-ncol=1 fig-cap="Average diesel price by district in North Rhine–Westphalia (Aug 2024 – Jul 2025)."}
+![](<../presentation/visualizations/nrw_district_heatmap.png>)
+:::
+  
+From @fig-nrw-heatmap, the price field is spatially flatter, consistent with the region's compact geography and dense fuel retail network. Nonetheless, urban clusters around Düsseldorf, Cologne, and the Ruhrgebiet register slightly higher prices, likely linked to urban cost premiums and congestion externalities, while peripheral districts toward the north and southwest show marginally lower prices, indicative of stronger competitive pressure and easier wholesale access.
+
+Together, these heatmaps corroborate the spatial heterogeneity captured later by the regression models: the inclusion of longitude–latitude polynomials and competition metrics (e.g., nearby stations within 1 km) in subsequent GAM and machine-learning models is empirically justified.
+
+They also illustrate the contrasting geographic and market structures of the two states—Bavaria's dispersed alpine topology versus NRW's integrated urban corridor—underpinning the region-specific spatial patterns observed in model coefficients.
+
+#### Transition to Modelling
+
+The exploratory evidence underscores strong spatial, temporal, and brand-level structures in European diesel pricing:
+
+- Prices fluctuate hourly and weekly with consumer demand cycles.
+- Geography and station density impose persistent spatial gradients.
+- Brand networks and competitive intensity materially affect observed prices.
+
+Consequently, the modelling pipeline progresses from interpretable linear regressions to smooth GAMs and, finally, high-capacity learners (XGBoost, Deep Neural Networks), ensuring both explanatory insight and predictive capability.
+
+## Methodology
+
+This chapter describes the modelling framework used to predict hourly diesel prices at the station level. It covers data preparation, feature construction, econometric and machine-learning model design, training setup, and interpretative framework.  
+
+The approach aims to balance interpretability with predictive accuracy, combining nested linear regressions with non-linear extensions such as GAMs, gradient-boosted trees, and neural networks.
+
+### Data Preparation
+
+Fuel price data are obtained from the harmonised **DuckDB** warehouse described in Chapter 4, specifically the table `german_fuel.duckdb`, containing timestamped retail diesel prices aggregated to an hourly frequency via `arg_max(diesel, date)` to retain the latest observation per station per hour.  
+
+Station-level metadata—including brand, geographic coordinates, and competition metrics—are drawn from `stations.duckdb`, which provides a consistent schema across European countries.  
+For this modelling exercise, we focus on the **Bavarian subset** (postcodes beginning with "8") and **North Rhine–Westphalia subset** (postcodes beginning with "4") to ensure internal consistency and spatial coverage.
+
+The data preparation pipeline proceeds as follows:
+
+1. **Station filtering:** Stations with missing or invalid coordinates are excluded.  
+2. **Regional subsetting:** Bavarian stations are identified via postcode prefix filtering.  
+3. **Hourly truncation:** Timestamps are rounded to the hour to align price changes with temporal covariates.  
+4. **Data merging:** Station-level price observations are joined with metadata on brand, coordinates, and competition.  
+5. **Quality control:** Stations with fewer than two valid hourly observations are dropped to avoid sparse temporal sequences.  
+
+### Feature Engineering
+
+Feature engineering creates the explanatory structure used in subsequent models.  
+The following transformations are applied:
+
+- **Temporal variables:** Month, weekday, and hour indicators extracted from timestamps to capture seasonal and diurnal patterns.  
+- **Sub-regional fixed effects:** Derived from the second digits of the postal code (`Zip2`), approximating intra-state districts.  
+- **Brand categories:** Top 10 brands treated as individual factors; remaining stations grouped by network size ("large", "medium", "small", "tiny").  
+- **Competition metric:** Number of other stations within 1 km (`nearby1km`), computed via great-circle distance joins.  
+- **Spatial coordinates:** Station longitude and latitude, later expanded via third-degree polynomial terms.  
+- **Temporal lags:** Hourly, daily, and weekly diesel price lags (`t – 1h`, `t – 24h`, `t – 168h`) to capture persistence and autocorrelation.  
+
+### Linear Models (LM-1 to LM-3)
+
+We estimate three nested linear models that progressively enrich the feature set. Throughout, $I\{\cdot\}$ denotes an indicator (dummy) function that equals 1 if the condition holds and 0 otherwise.
+
+#### LM-1 (Time Features and Sub-region)
+
+LM-1 regresses price on temporal seasonality and sub-regional fixed effects, using ordered-factor polynomial contrasts for Month and Weekday:
+
+$$
+\begin{aligned}
+p_{it}
+&= \alpha
++ \sum_{k=1}^{K_M} \theta_k\,\text{Month}^{(k)}_t
++ \sum_{k=1}^{K_W} \psi_k\,\text{Weekday}^{(k)}_t \\
+&\quad + \sum_{h \in \mathcal H} \eta_h\, I\{\text{Hour}_t = h\}
++ \sum_{z \in \mathcal Z} \xi_z\, I\{\text{Zip2}_i = z\}
++ \varepsilon_{it}.
+\end{aligned}
+$$
+
+**Term definitions (LM-1)**
+
+- $p_{it}$ – retail diesel price (€/L) at station $i$ and hour $t$ (latest hourly record).
+- $\text{Month}^{(k)}_t$, $\text{Weekday}^{(k)}_t$ – orthogonal polynomial components (e.g. $k=\text{L},\text{Q},\dots$) of ordered Month/Weekday factors created via  
+  `month(date, label = TRUE)` and `wday(date, label = TRUE)`.
+- $I\{\text{Hour}_t = h\}$ – hour-of-day fixed effects for $h = 0,\dots,23$ (one reference hour omitted).
+- $I\{\text{Zip2}_i = z\}$ – sub-region fixed effects based on the second and third postcode digits for station $i$.
+- $\varepsilon_{it}$ – mean-zero error term.
+
+This specification isolates pure time and regional structure, and provides a simple seasonal benchmark.
+
+#### LM-2 (Adding Location, Brand, Competition)
+
+LM-2 replaces the ordered Month/Weekday polynomials with **unordered dummies** and adds linear coordinates, brand, and local competition:
+
+$$
+\begin{aligned}
+p_{it}
+&= \alpha
++ \sum_{m \in \mathcal M} \beta_m\, I\{\text{Month}_t = m\}
++ \sum_{w \in \mathcal W} \gamma_w\, I\{\text{Weekday}_t = w\} \\
+&\quad + \sum_{h \in \mathcal H} \eta_h\, I\{\text{Hour}_t = h\}
++ \sum_{z \in \mathcal Z} \xi_z\, I\{\text{Zip2}_i = z\} \\
+&\quad + \beta_{\text{lon}}\, \text{lon}_i
++ \beta_{\text{lat}}\, \text{lat}_i
++ \sum_{b \in \mathcal B} \delta_b\, I\{\text{BrandCat}_i = b\} \\
+&\quad + \gamma_c\, \text{nearby1km}_i
++ \delta_n\, n_i
++ \varepsilon_{it}.
+\end{aligned}
+$$
+
+**Additional terms relative to LM-1**
+
+- $I\{\text{Month}_t = m\}$, $I\{\text{Weekday}_t = w\}$ – **unordered** Month/Weekday dummies constructed via `as.character(...)` (one level omitted in each set).
+- $\text{lon}_i$, $\text{lat}_i$ – longitude and latitude of station $i$, taken from `stations.duckdb`.
+- $I\{\text{BrandCat}_i = b\}$ – brand-category dummies: large brands appear as named levels; smaller brands are grouped by network size.
+- $\text{nearby1km}_i$ – count of other stations within 1 km of station $i$ (competition proxy), pre-computed in `stations.duckdb`.
+- $n_i$ – brand network size: number of stations operated by the brand of station $i$ (station-count per brand).
+
+LM-2 therefore captures geographic gradients, brand structure, and local competition, beyond the purely temporal pattern of LM-1.
+
+#### LM-3 (Adding Lags and Spatial Polynomials)
+
+LM-3 further enriches LM-2 by (i) replacing linear coordinates with **orthogonal cubic polynomials**, (ii) adding short-run price lags, and (iii) allowing a nonlinear effect of station scale via both $n_i$ and $\log n_i$:
+
+$$
+\begin{aligned}
+p_{it}
+&= \alpha
++ \sum_{m \in \mathcal M} \beta_m\, I\{\text{Month}_t = m\}
++ \sum_{w \in \mathcal W} \gamma_w\, I\{\text{Weekday}_t = w\} \\
+&\quad + \sum_{h \in \mathcal H} \eta_h\, I\{\text{Hour}_t = h\}
++ \sum_{z \in \mathcal Z} \xi_z\, I\{\text{Zip2}_i = z\} \\
+&\quad + \sum_{r=1}^{3} \Big(
+  \pi^{\text{lon}}_{r}\, \text{poly}(\text{lon}_i, 3)_r
++ \pi^{\text{lat}}_{r}\, \text{poly}(\text{lat}_i, 3)_r
+\Big) \\
+&\quad + \sum_{b \in \mathcal B} \delta_b\, I\{\text{BrandCat}_i = b\}
++ \gamma_c\, \text{nearby1km}_i \\
+&\quad + \phi_1\, p_{i,t-1\text{h}}
++ \phi_2\, p_{i,t-24\text{h}}
++ \phi_3\, p_{i,t-168\text{h}} \\
+&\quad + \delta_n\, n_i
++ \delta_{\log}\, \log n_i
++ \varepsilon_{it}.
+\end{aligned}
+$$
+
+**Additional terms relative to LM-2**
+
+- $\text{poly}(\text{lon}_i, 3)_r$, $\text{poly}(\text{lat}_i, 3)_r$ – orthogonal polynomial basis (degree 3, $r=1,2,3$) of longitude/latitude, constructed with `poly(longitude, 3)` and `poly(latitude, 3)`; they allow smooth spatial curvature rather than a single linear gradient.
+- $p_{i,t-1\text{h}}$, $p_{i,t-24\text{h}}$, $p_{i,t-168\text{h}}$ – station-specific lagged prices (1 hour, 1 day, 1 week) computed prior to train/validation/test splitting.
+- $\log n_i$ – log-transformed brand network size capturing diminishing returns to scale.
+
+LM-3 is our strongest linear baseline and defines the unified feature matrix used for the nonlinear models. We report $R^2$, RMSE (validation/test), and BIC for all three linear specifications.
+
+### Non-linear Extensions
+
+#### Generalized Additive Model (GAM)
+
+The GAM extends LM-3 by replacing selected linear terms with smooth functions $s(\cdot)$:
+
+$$
+\begin{aligned}
+p_{it}
+&= s(p_{i,t-1\text{h}})
++ s(p_{i,t-24\text{h}})
++ s(p_{i,t-168\text{h}}) \\
+&\quad + s(\text{month}_t)
++ s(\text{wday}_t)
++ s(\text{hour}_t) \\
+&\quad + s(\text{lon}_i, \text{lat}_i)
++ s(n_i)
++ s(\text{nearby1km}_i) \\
+&\quad + \text{BrandCat}_i
++ \text{Zip2}_i
++ \varepsilon_{it}.
+\end{aligned}
+$$
+
+- Temporal drivers (lags, month, weekday, hour) are modeled with cyclic smooths.  
+- Spatial variation is captured with a thin-plate spline $s(\text{lon}_i, \text{lat}_i)$.  
+- Brand and Zip2 remain as categorical fixed effects, while $s(n_i)$ and $s(\text{nearby1km}_i)$ allow flexible nonlinear effects of network scale and local competition.
+
+The GAM is estimated using `mgcv::bam`, exploiting its efficiency for large time-series panels and providing a transparent bridge between linear models and tree-based or neural approaches.
+
+#### XGBoost Model
+
+The XGBoost model is trained on the full LM-3 design matrix, capturing temporal effects, sub-regional fixed effects, brand categories, competition metrics, spatial polynomials, and lagged diesel prices.
+
+A gradient-boosted ensemble of shallow regression trees (depth ≈ 4–6) is trained using squared-error loss and second-order gradient updates.
+Key hyperparameters (tree depth, learning rate, number of boosting rounds, and L2 regularisation) are tuned via grid search.
+
+Early stopping on validation RMSE prevents overfitting by halting training once performance no longer improves.Feature importance is quantified using gain statistics (average reduction in loss contributed by each split).
+
+#### Deep Neural Network (DNN)
+
+A fully connected feed-forward neural network is trained on the LM-3 feature matrix.Categorical variables are one-hot encoded, and all numeric predictors are z-scored using the training-set means and standard deviations.
+
+The network architecture consists of three hidden layers (128 $\rightarrow$ 64 $\rightarrow$ 32 $\rightarrow$ 1) each with ReLU activation to model nonlinear interactions.The model is trained using the Adam optimizer with MSE loss, and early stopping (patience = 5) is applied to prevent overfitting, restoring the best-performing weights based on validation loss.
+
+This compact architecture is well suited to structured/tabular data and balances predictive accuracy with computational efficiency.
+
+### Training and Evaluation Setup
+
+#### Train–Validation–Test Split:
+
+  - Training: Aug 2024 – Jul 2025 (80 %)  
+  - Validation: Aug 2024 – Jul 2025 (20 %)  
+  - Test: Aug 2025 – Oct 2025 (out-of-sample)
+  
+The data is split chronologically to respect the time-series nature of fuel prices.
+
+Training and validation data cover Aug 2024–Jul 2025, allowing the models to learn seasonal cycles, weekday/hourly patterns, competition effects, and lagged price behaviour over a full annual period.
+The validation subset (20 %) is drawn from the same time window to ensure hyperparameter tuning is performed on data that exhibits identical seasonal structure as the training set.
+
+The test set (Aug 2025–Oct 2025) is strictly out-of-sample and occurs after the training/validation period. This ensures that model performance is evaluated on truly unseen future data, preventing information leakage and producing an honest assessment of predictive ability under a forward-looking scenario.
+
+This setup is necessary because fuel prices exhibit strong temporal dependencies (daily, weekly, and seasonal patterns), meaning that random shuffling of observations would lead to leakage and artificially optimistic performance.
+
+#### Evaluation Metrics
+
+To compare model performance across linear, tree-based, and neural network approaches, two standard regression metrics are used.
+
+**Root Mean Squared Error (RMSE):**
+
+$$
+RMSE = \sqrt{\frac{1}{n}\sum_{it}(\hat{p}_{it} - p_{it})^2}
+$$
+
+RMSE measures the average magnitude of prediction errors, expressed in the same units as diesel price (€/L):
+
+- It penalises larger errors more heavily due to the squared term.  
+- Lower RMSE indicates better predictive accuracy.  
+- RMSE is particularly informative in fuel-price modelling because small deviations (e.g., 1–3 ct/L) are economically meaningful.
+
+**Coefficient of Determination (R²):**
+
+$$
+R^2 = 1 - 
+\frac{\sum_{it} (\hat{p}_{it} - p_{it})^2}
+     {\sum_{it} (p_{it} - \bar{p})^2}
+$$
+
+R² quantifies the proportion of variance in observed prices explained by the model. A value close to 1 indicates strong explanatory power. R² complements RMSE:
+
+  - RMSE reflects absolute prediction error,  
+  - R² captures how well the model explains systematic variation in prices.
+
+**Bayesian Information Criterion (BIC) - computed only for linear models):**
+
+BIC applies a penalty for model complexity, reducing the risk of over-fitting when comparing nested linear models:
+
+- Lower BIC indicates a more parsimonious model.  
+- Useful when evaluating LM-1, LM-2, and LM-3, where the number of features increases across models.
+
+### Feature Selection and Consistency
+
+The LM-3 feature set forms the canonical input across all subsequent nonlinear models.This uniformity isolates differences in model performance to the estimation method rather than variable inclusion. Feature scaling (z-score) is applied only where algorithmically necessary (e.g., neural networks).Cyclical time features are encoded using sine–cosine transformations to preserve periodicity.
+
+## Results
+
+### Linear models
+
+#### Model 1 — Temporal and Regional Seasonality
+
+```{r}
+#| label: tbl-lm1-top5
+#| tbl-cap: "Top five LM-1 coefficients (by absolute value) for Bavaria and NRW."
+
+library(tibble)
+library(dplyr)
+library(kableExtra)
+library(stringr)
+
+bavaria_lm1 <- tribble(
+  ~`Coefficient (term)`,        ~`Bavaria $\\beta$`,
+  "month (linear contrast)",     -0.0966,
+  "hour = 09",                   -0.0891,
+  "hour = 17",                   -0.0865,
+  "hour = 19",                   -0.0856,
+  "hour = 15",                   -0.0855
+) |>
+  mutate(`Coefficient (term)` = str_replace_all(`Coefficient (term)`, "_", "\\\\_"))
+
+nrw_lm1 <- tribble(
+  ~`Coefficient (term)`,        ~`NRW $\\beta$`,
+  "month (quadratic contrast)",  0.0935,
+  "hour = 19",                   -0.0877,
+  "hour = 17",                   -0.0868,
+  "hour = 18",                   -0.0841,
+  "hour = 15",                   -0.0832
+) |>
+  mutate(`Coefficient (term)` = str_replace_all(`Coefficient (term)`, "_", "\\\\_"))
+
+lm1_top5 <- bind_cols(bavaria_lm1, nrw_lm1)
+
+kbl(
+  lm1_top5,
+  booktabs  = TRUE,
+  align     = c("l","r","l","r"),
+  digits    = 4,
+  escape    = FALSE,
+  longtable = TRUE, 
+  col.names = c(
+    "Bavaria term", "Bavaria $\\beta$",
+    "NRW term",     "NRW $\\beta$"
+  )
+) |>
+  kable_styling(
+    full_width = FALSE,
+    position   = "center"
+  )
+```
+
+From @tbl-lm1-top5, we can infer that:
+
+- Across both regions, intra-day patterns dominate: late-afternoon/evening hours (15–20h) carry the largest negative adjustments relative to the reference hour, indicating systematically lower prices at those times. 
+- Seasonal components matter as well: Bavaria's strong linear (L) month trend (−0.0966) suggests a clear monotonic seasonal slope; NRW's quadratic (Q) month component (+0.0935) indicates curvature around the seasonal cycle. ZIP-2 fixed effects contribute, but are secondary to the hour-of-day profile.
+
+
+#### Model 2 — Adding Brand, Coordinates, Competition
+
+```{r}
+#| label: tbl-lm2-top5
+#| tbl-cap: "Top five LM-2 coefficients (by absolute value) for Bavaria and NRW."
+#| echo: false
+#| warning: false
+#| message: false
+
+bavaria_lm2 <- tribble(
+  ~`Coefficient (term)`, ~`Bavaria $\\beta$`,
+  "hour = 09",            -0.0888,
+  "hour = 17",            -0.0869,
+  "hour = 19",            -0.0861,
+  "hour = 20",            -0.0857,
+  "hour = 15",            -0.0857
+) |>
+  mutate(`Coefficient (term)` = str_replace_all(`Coefficient (term)`, "_", "\\\\_"))
+
+nrw_lm2 <- tribble(
+  ~`Coefficient (term)`,    ~`NRW $\\beta$`,
+  "brand category = small",  0.6728,
+  "month = Jan",             0.1144,
+  "month = Feb",             0.1130,
+  "hour = 19",              -0.0910,
+  "hour = 17",              -0.0896
+) |>
+  mutate(`Coefficient (term)` = str_replace_all(`Coefficient (term)`, "_", "\\\\_"))
+
+lm2_top5 <- bind_cols(bavaria_lm2, nrw_lm2)
+
+kbl(
+  lm2_top5,
+  booktabs  = TRUE,
+  align     = c("l","r","l","r"),
+  digits    = 4,
+  escape    = FALSE,
+  longtable = TRUE,   
+  col.names = c(
+    "Bavaria term", "Bavaria $\\beta$",
+    "NRW term",     "NRW $\\beta$"
+  )
+) |>
+  kable_styling(
+    full_width    = FALSE,
+    position      = "center",
+    latex_options = c("striped")
+  )
+```
+
+From @tbl-lm2-top5, we can infer that adding brand, geography, and competition preserves the strong diurnal pattern in Bavaria (hours 15–20 remain the dominant drivers):
+
+- In NRW, brand and month levels become highly salient: small brand stations price higher on average (+0.673), and January/February mark sizeable positive seasonal lifts (+0.114 / +0.113). These effects sit alongside (not instead of) the robust hour-of-day dips.
+- Latitude/longitude enter with modest linear effects (e.g., Bavaria latitude −0.0365), and local competition (nearby_station_1km) is small but significant in Bavaria (+0.00022), consistent with slight upward price pressure when a neighbor is very close (e.g., positioning/branding dynamics). 
+- Station count (n_stations) has tiny coefficients, indicating limited direct linear effect once brand and time controls are present.
+
+
+#### Model 3 — Adding Temporal Lags & Nonlinear Spatial Polynomials
+
+```{r}
+#| label: tbl-lm3-top5
+#| tbl-cap: "Top five LM-3 coefficients (by absolute value) for Bavaria and NRW."
+#| echo: false
+#| warning: false
+#| message: false
+
+bavaria_lm3 <- tribble(
+  ~`Coefficient (term)`,      ~`Bavaria $\\beta$`,
+  "poly(longitude, 3)[1]",     -6.1586,
+  "poly(latitude, 3)[1]",      -5.6883,
+  "poly(longitude, 3)[3]",      5.3678,
+  "poly(longitude, 3)[2]",      3.2359,
+  "diesel_lag_1h",              0.3626
+) |>
+  mutate(`Coefficient (term)` = str_replace_all(`Coefficient (term)`, "_", "\\\\_"))
+
+nrw_lm3 <- tribble(
+  ~`Coefficient (term)`,      ~`NRW $\\beta$`,
+  "poly(latitude, 3)[2]",       1.6160,
+  "poly(latitude, 3)[3]",      -1.2835,
+  "poly(longitude, 3)[3]",     -1.1081,
+  "poly(longitude, 3)[2]",      0.5454,
+  "poly(longitude, 3)[1]",     -0.4405
+) |>
+  mutate(`Coefficient (term)` = str_replace_all(`Coefficient (term)`, "_", "\\\\_"))
+
+lm3_top5 <- bind_cols(bavaria_lm3, nrw_lm3)
+
+kbl(
+  lm3_top5,
+  booktabs  = TRUE,
+  align     = c("l","r","l","r"),
+  digits    = 4,
+  escape    = FALSE,
+  longtable = TRUE, 
+  col.names = c(
+    "Bavaria term", "Bavaria $\\beta$",
+    "NRW term",     "NRW $\\beta$"
+  )
+) |>
+  kable_styling(
+    full_width    = FALSE,
+    position      = "center",
+    latex_options = c("striped")
+  )
+```
+
+From @tbl-lm3-top5, we can infer that introducing price lags and nonlinear spatial structure materially changes the ranking of influential terms:
+
+- Spatial gradients are now dominant. Large-magnitude polynomial terms show strong nonlinear East–West/North–South structure in both Bavaria and NRW (e.g., Bavaria poly(longitude,3){1,3,2} and NRW poly(latitude,3){2,3} / poly(longitude,3){3,2,1}). This indicates location-dependent curvature in prices that simple linear coordinates could not capture.
+- Temporal persistence remains strong. In Bavaria, diesel_lag_1h is among the top five (+0.3626), with additional positive persistence at daily and weekly horizons (+0.2563; +0.1620). In NRW the 1-hour lag is also large and highly significant (+0.4276), narrowly outside the top-five only because the spatial polynomials dominate by |β|.
+- Diurnal pattern persists but is partially absorbed. Hour dummies (e.g., Bavaria hours 9/15/17 ≈ −0.045 to −0.041; NRW hours 14–19 ≈ −0.045 to −0.049) remain negative and significant, consistent with systematically lower evening prices even after accounting for short-term persistence and spatial curvature.
+
+#### Linear models comparison
+
+- **Without lags (LM-1/2):** **Hour-of-day** dominates in both regions; NRW shows stronger **month-level** effects than Bavaria once brands are added.  
+- **Brand structure (LM-2):** NRW's `brand_categorysmall` indicates a **higher price level** for small-brand stations, conditional on time and location; Bavaria's brand differences are more modest.  
+- **With lags & nonlinear space (LM-3):** **Spatial heterogeneity** explains substantial variation (large polynomial β's), while **1-hour price persistence** remains a key predictor.  
+- **Regional geography:** Bavaria shows pronounced **East–West** curvature (longitude polynomials); NRW shows strong **North–South** curvature (latitude polynomials), aligning with each region's layout and market density.
+
+::: {#tbl-linear-metrics tbl-cap="Linear model comparison (lower RMSE/BIC indicates better fit)"}
+| Region  | Model | RMSE (Validation) | RMSE (Test) | R²    | BIC             |
+|:--------|:------|-------------------:|------------:|------:|----------------:|
+| Bavaria | LM-1  | 0.0523             | 0.0594      | 0.4477 | -13,681,766.25  |
+| Bavaria | LM-2  | 0.0503             | 0.0577      | 0.4883 | -14,021,695.41  |
+| **Bavaria** | **LM-3**  | **0.0346**         | **0.0354**  | **0.7545** | **-16,770,314.29** |
+| NRW     | LM-1  | 0.0505             | 0.0579      | 0.5169 | -20,682,325.65  |
+| NRW     | LM-2  | 0.0485             | 0.0562      | 0.5542 | -21,214,623.94  |
+| **NRW** | **LM-3**  | **0.0378**         | **0.0386**  | **0.7310** | **-23,820,511.90** |
+:::
+
+From @tbl-linear-metrics, the performance improves monotonically from LM-1 to LM-3 as additional spatial and temporal features are introduced:
+
+- The inclusion of geographic coordinates, brand, and competitive factors in LM-2 enhances explanatory power by roughly 4–5 percentage points in R² across both regions. 
+- Incorporating lagged price terms and nonlinear spatial polynomials in LM-3 produces the most substantial improvement—boosting R² to approximately 0.75 in Bavaria and 0.73 in NRW, and reducing test RMSE by more than one-third relative to LM-1. 
+- These results confirm that short-term price persistence and spatial heterogeneity are critical drivers of diesel price variation, justifying LM-3 as the preferred linear baseline for subsequent non-linear modelling stages.
+
+### GAM models
+
+::: {#fig-gam-bavaria fig-cap="Partial smooth effects for the Bavaria GAM."}
+![](<../model fitting/Bavaria/results/bavaria_diesel_gam_terms_panel.png>)
+:::
+
+::: {#fig-gam-nrw fig-cap="Partial smooth effects for the NRW GAM."}
+![](<../model fitting/North Rhine–Westphalia/results/nrw_diesel_gam_terms_panel.png>)
+:::
+
+The partial smooth effects for Bavaria (Figure @fig-gam-bavaria) and North Rhine–Westphalia (Figure @fig-gam-nrw) reveal consistent nonlinear structures across regions, extending the linear models by capturing temporal and spatial dependencies in fuel price dynamics.
+
+**Temporal inertia is the dominant driver of diesel price movements.**  
+Lagged prices $p_{i,t-1\text{h}},\; p_{i,t-24\text{h}},\; p_{i,t-168\text{h}}$ show strong positive effects, with the one-hour lag displaying the steepest slope in both states. The daily and weekly lags contribute smaller but systematic adjustments, reflecting persistent autocorrelation in retail fuel prices.
+
+**Seasonal and intraday patterns contribute little residual structure once lags are included.**  
+Smooth functions for month $s(\text{month})$, weekday $s(\text{wday})$, and hour-of-day $s(\text{hour})$ are nearly flat in both Bavaria and NRW. This indicates that short-term seasonal and intraday cycles are largely absorbed by the autoregressive terms.
+
+**Spatial smooths capture substantial geographic heterogeneity in fuel prices.**  
+The bivariate smooth $s(\text{longitude},\, \text{latitude})$
+reveals broad spatial gradients — higher predicted prices in southern Bavaria and around the Ruhr area in NRW — consistent with earlier heatmaps.
+
+**Competition and brand-scale effects are secondary once temporal and spatial structure is captured.**  
+Nonlinear effects of competition $s(\text{nearby\_station\_1km})$ and brand scale $s(\text{n\_stations})$ are comparatively small relative to the strong temporal inertia and spatial variation.
+
+Overall, the GAMs indicate that temporal inertia and geographic variation are the primary determinants of diesel price dynamics in both Bavaria and NRW. After accounting for these components, seasonal, hourly, and local competitive effects play only marginal roles.
+
+### XGBoost 
+
+#### Model Performance
+
+```{r}
+#| label: tbl-xgb-performance
+#| tbl-cap: "XGBoost Model Performance for Bavaria and NRW."
+#| echo: false
+#| warning: false
+#| message: false
+
+library(knitr)
+library(kableExtra)
+library(tibble)
+library(dplyr)
+
+xgb_perf <- tribble(
+  ~Region,     ~`RMSE (Validation)`, ~`RMSE (Test)`, ~`Best Iteration`,
+  "Bavaria",    0.0253,               0.0283,          134,
+  "NRW",        0.0270,               0.0311,          126
+)
+
+kbl(
+  xgb_perf,
+  booktabs  = TRUE,
+  align     = c("l", "r", "r", "r"),
+  digits    = 4,
+  escape    = FALSE,
+  longtable = TRUE
+) |>
+  kable_styling(
+    full_width    = FALSE,
+    position      = "center",
+    latex_options = c("striped")
+  )
+```
+
+From @tbl-xgb-performance, we can see that regional models achieve comparable performance, with Bavaria slightly outperforming NRW, possibly due to lower spatial heterogeneity and fewer competing brands. 
+
+Overall, RMSE values between 2.5–3% indicate strong predictive precision relative to observed price fluctuations. The optimal iteration counts (126–134) suggest convergence without overfitting, confirming that early stopping effectively stabilised training.
+
+#### SHAP Interpretation and Feature Importance
+
+To enhance interpretability, SHAP (SHapley Additive exPlanations) analysis was employed to quantify the marginal contribution of each predictor to the XGBoost model output. The SHAP beeswarm plots for both Bavaria and NRW exhibit highly consistent patterns, indicating stable feature relevance across regions.
+
+::: {#fig-xgb-shap-bavaria fig-cap="SHAP beeswarm plot for the Bavaria XGBoost model."}
+![](../model fitting/Bavaria/results/bavaria_diesel_xgb3_shap_beeswarm.png)
+:::
+
+::: {#fig-xgb-shap-nrw fig-cap="SHAP beeswarm plot for the NRW XGBoost model."}
+![](../model fitting/North Rhine–Westphalia/results/nrw_diesel_xgb3_shap_beeswarm.png)
+:::
+
+**Key insights:**
+
+- **Temporal Lags as Dominant Drivers:** Lagged diesel price variables (`diesel_lag_1h`, `diesel_lag_1d`, and `diesel_lag_1w`) show the largest SHAP magnitudes, confirming that recent historical prices exert the strongest influence on current price estimates.  
+  The one-hour lag (`diesel_lag_1h`) is particularly impactful, highlighting short-term persistence and rapid market adjustment at the retail level.
+
+- **Intra-Day and Seasonal Effects:** Hour-of-day variables (`factor(hour(date))`) contribute moderate effects, with higher SHAP values observed around morning (04–07h) and evening (17–19h) hours, aligning with consumer activity cycles.  
+  Month indicators (`as.character(month(date))`) reveal minor seasonal shifts, with September and January showing slightly positive contributions, reflecting recurring demand patterns and supply adjustments.
+
+- **Spatial and Market Structure Features:** Variables capturing competition and geographic variation (`n_stations`, `poly(latitude, 3)`) exhibit smaller SHAP magnitudes. Although areas with more stations (`n_stations`) tend to associate with marginally lower predicted prices—consistent with competitive effects—these spatial variables contribute less overall once temporal patterns are accounted for.
+
+### Deep Neural Network 
+
+::: {#fig-nn-bavaria fig-cap="Learning curve (MSE) for the DNN — Bavaria"}
+![](../model fitting/Bavaria/results/bavaria_diesel_nn3_learning_curve.png){length="0.8\\textwidth"}
+:::
+
+::: {#fig-nn-nrw fig-cap="Learning curve (MSE) for the DNN — North Rhine–Westphalia"}
+![](../model fitting/North Rhine–Westphalia/results/nrw_diesel_nn3_learning_curve.png){length="0.8\\textwidth"}
+:::
+
+```{r}
+#| label: tbl-nn-metrics
+#| tbl-cap: "DNN performance by region (lower RMSE is better)."
+#| echo: false
+#| warning: false
+#| message: false
+
+library(tibble)
+library(dplyr)
+library(kableExtra)
+
+nn_metrics <- tribble(
+  ~Region,  ~Model, ~`RMSE (Validation)`, ~`RMSE (Test)`, ~`R² (Test)`,
+  "Bavaria", "DNN",  0.0387,               0.0486,         0.6875,
+  "NRW",     "DNN",  0.0367,               0.0406,         0.6866
+)
+
+kbl(
+  nn_metrics,
+  booktabs  = TRUE,
+  align     = c("l", "l", "r", "r", "r"),
+  digits    = 4,
+  longtable = TRUE
+) |>
+  kable_styling(
+    full_width    = FALSE,
+    position      = "center",
+    latex_options = c("striped")
+  )
+```
+
+**Interpretation:**  
+
+- **General fit:** the DNN achieves R² ≈ 0.69 in both regions, but test RMSE is above the LM-3 baseline (Bavaria: 0.0486 vs 0.0354; NRW: 0.0406 vs 0.0386), indicating that the linear model with lags and spatial polynomials remains hard to beat given this feature set and data size.  
+- **Learning dynamics:** validation loss bottoms out early (≈ epoch 5–7), after which the widening gap to training loss signals overfitting. An earlier stopping point (or stronger regularization) would likely be optimal.
+
+### Comparison between all models:
+
+#### Model Performance Summary
+
+To evaluate the relative performance of all implemented models—**Generalized Additive Model (GAM)**, **Extreme Gradient Boosting (XGBoost)**, and **Deep Neural Network (DNN)**—we compared their predictive accuracy based on **Root Mean Squared Error (RMSE)** for both validation and test datasets across the two regional cases: Bavaria and North Rhine–Westphalia (NRW).
+
+```{r}
+#| label: tbl-model-comparison
+#| tbl-cap: "Model comparison across regions (lower RMSE is better)."
+#| echo: false
+#| warning: false
+#| message: false
+
+library(tibble)
+library(dplyr)
+library(kableExtra)
+
+# Raw numeric results
+model_comp <- tribble(
+  ~Region,  ~Model,    ~RMSE_Validation, ~RMSE_Test,
+
+  # ---- Bavaria ----
+  "Bavaria", "LM-1",    0.0523, 0.0594,
+  "Bavaria", "LM-2",    0.0503, 0.0577,
+  "Bavaria", "LM-3",    0.0346, 0.0354,
+  "Bavaria", "GAM",     0.0284, 0.0308,
+  "Bavaria", "XGBoost", 0.0253, 0.0283,
+  "Bavaria", "DNN",     0.0268, 0.0295,
+
+  # ---- NRW ----
+  "NRW",     "LM-1",    0.0505, 0.0579,
+  "NRW",     "LM-2",    0.0485, 0.0562,
+  "NRW",     "LM-3",    0.0378, 0.0386,
+  "NRW",     "GAM",     0.0301, 0.0336,
+  "NRW",     "XGBoost", 0.0270, 0.0311,
+  "NRW",     "DNN",     0.0284, 0.0322
+)
+
+# Nicely formatted (four decimal places)
+model_comp_fmt <- model_comp |>
+  mutate(
+    `RMSE (Validation)` = sprintf("%.4f", RMSE_Validation),
+    `RMSE (Test)`       = sprintf("%.4f", RMSE_Test)
+  ) |>
+  select(Region, Model, `RMSE (Validation)`, `RMSE (Test)`)
+
+# Build table
+kbl(
+  model_comp_fmt,
+  booktabs  = TRUE,
+  align     = c("l","l","c","c"),
+  escape    = FALSE,
+  longtable = TRUE
+) |>
+  kable_styling(
+    full_width    = FALSE,
+    position      = "center",
+    latex_options = "striped"
+  ) |>
+  # Bold the XGBoost rows
+  row_spec(
+    which(model_comp$Model == "XGBoost"),
+    bold = TRUE
+  )
+```
+
+#### Model Selection for Price Estimation
+
+Across both regions, **XGBoost consistently achieved the lowest RMSE on both validation and test sets**, indicating its superior ability to capture complex, nonlinear dependencies in fuel price movements.
+
+Considering the balance between **predictive accuracy, computational efficiency, and interpretability**, the **XGBoost model** is selected as the optimal approach for **real-time fuel price estimation** within the Shiny App framework.
+
+Its consistent outperformance across regions (RMSE ≈ 0.03) demonstrates that it generalizes effectively while maintaining explanatory transparency through SHAP analysis.
+
+The GAM and DNN models remain valuable for cross-validation and model ensembling; however, for operational deployment, XGBoost provides the most reliable performance and interpretability trade-off.
+
+## Future Work and Deployment
+
+This section outlines the proposed roadmap for transforming the research framework into a scalable, production-ready prediction system.  
+
+The envisioned architecture integrates the Central European Fuel Price Warehouse, automated model retraining pipelines, and an interactive Shiny web application for real-time retail fuel price estimation.  
+
+The objective is to operationalise the modelling framework into an end-to-end platform that continuously ingests new data, retrains models, and provides accessible, interpretable insights to end users.
+
+**System Architecture and Data Flow:**
+
+::: {#fig-system-flow fig-cap="System architecture and data flow for training and prediction."}
+![](shiny-app-flowchart.png){width="0.7\\textwidth"}
+:::
+
+The workflow begins with the ingestion of harmonised fuel price data from multiple European countries.  
+
+National and regional datasets (e.g., Germany, Austria, Slovenia) are aggregated into a centralised data warehouse, designed with a unified schema to ensure consistency across spatial and temporal dimensions. Following harmonisation, the warehouse provides 12-month rolling training data for automated model development, feature engineering, and validation.
+
+This modular design enables the system to perform routine model updates as new data are ingested, ensuring adaptive and region-specific dynamics are captured over time. By separating the data engineering, model training, and deployment layers, the architecture supports scalability and cross-country integration within the same analytical framework.
+
+Once models are trained and validated, they are deployed via an interactive Shiny App interface, which acts as the link between end-users and the predictive backend. Users specify input parameters such as fuel type, brand, location, and time, which are automatically validated and geocoded within the app. The Shiny service then queries the warehouse to retrieve the corresponding 12-month dataset, applies the best-performing model (e.g., XGBoost, GAM, or DNN, depending on region and data segment), and generates an estimated retail fuel price.
+
+Outputs include the estimated price along with confidence intervals and explainability metrics (e.g., SHAP-based feature attributions), allowing for transparent and interpretable model predictions. The system is designed for future scalability, where model performance can be continuously tracked and retrained through automated pipelines.
+
+### Deployment and Continuous Improvement
+
+The deployment framework will leverage automated retraining pipelines to periodically update model parameters as new data enter the warehouse.This ensures that predictions remain accurate and robust amid evolving market and seasonal conditions.Planned extensions include: 
+
+- Incorporation of macroeconomic and supply chain indicators (e.g., crude oil benchmarks, refinery throughput).  
+- Expansion to additional European markets for broader cross-border analysis.  
+- Implementation of model drift detection and alert mechanisms for proactive retraining.  
+- Development of enhanced user interface features, such as forecast dashboards, regional comparisons, and exportable reports.
+
+Overall, this framework establishes the foundation for an end-to-end predictive analytics platform that seamlessly integrates data engineering, statistical modelling, and user interaction. It transforms the current research prototype into an operational decision-support system for monitoring and forecasting European retail fuel prices.
+
+## References
+
+1.	Allcott, H., & Wozny, N. (2014). Gasoline prices, fuel economy, and the energy paradox. The Review of Economics and Statistics, 96(5), 779–795. https://doi.org/10.1162/REST_a_00419
+2.	Bachmeier, L. J., & Griffin, J. M. (2003). New evidence on asymmetric gasoline price responses. The Review of Economics and Statistics, 85(3), 772–776. 
+3.	Barron, K., & Umbeck, J. (1984). The effects of different regulatory regimes on gasoline retailing. The RAND Journal of Economics, 15(3), 483–498.
+4.	Brennwald, T., & Schmid, K. (2023). Transparency and competition in retail fuel markets: Evidence from European price reporting systems. Energy Economics, 124, 106803. https://doi.org/10.1016/j.eneco.2023.106803
+5.	Haucap, J., & Müller, A. (2022). Fuel price regulation, transparency, and consumer welfare: Lessons from Germany. Competition and Regulation in Network Industries, 23(1), 37–59. https://doi.org/10.1177/17835917221094720
+6.	Lutz, B. J., & Kempf, A. (2021). Real-time fuel price transparency and competitive dynamics. Energy Policy, 156, 112406. https://doi.org/10.1016/j.enpol.2021.112406
+7.	Espey, M. (1998). Gasoline demand revisited: An international meta-analysis of elasticities. Energy Economics, 20(3), 273–295. https://doi.org/10.1016/S0140-9883(97)00013-3
+8.	Verlinda, J. A. (2008). Do rockets rise faster and feathers fall slower in an atmosphere of local market power? Evidence from the retail gasoline market. The Journal of Industrial Economics, 56(3), 581–612. https://doi.org/10.1111/j.1467-6451.2008.00377.x
+9.	Borenstein, S., Cameron, A. C., & Gilbert, R. (1997). Do gasoline prices respond asymmetrically to crude oil price changes? The Quarterly Journal of Economics, 112(1), 305–339. https://doi.org/10.1162/003355397555118
+10.	Tielens, P., et al. (2020). Cross-border integration of European fuel markets: Price convergence and volatility transmission. Energy Policy, 144, 111672.
+11.	Hastie, T., & Tibshirani, R. (1990). Generalized Additive Models. Chapman & Hall.
+12.	Wood, S. N. (2017). Generalized Additive Models: An Introduction with R (2nd ed.). CRC Press.
+13.	Chen, T., & Guestrin, C. (2016). XGBoost: A scalable tree boosting system. Proceedings of the 22nd ACM SIGKDD Conference on Knowledge Discovery and Data Mining, 785–794. https://doi.org/10.1145/2939672.2939785
+14.	Lundberg, S. M., & Lee, S.-I. (2017). A unified approach to interpreting model predictions. Advances in Neural Information Processing Systems, 30, 4765–4774.
+15.	Ribeiro, M. T., Singh, S., & Guestrin, C. (2016). "Why should I trust you?": Explaining the predictions of any classifier. Proceedings of the 22nd ACM SIGKDD International Conference on Knowledge Discovery and Data Mining, 1135–1144. https://doi.org/10.1145/2939672.2939778
+16.	Hyndman, R. J., & Athanasopoulos, G. (2021). Forecasting: Principles and Practice (3rd ed.). OTexts.
+17.	Oshan, T. M., et al. (2019). A primer for spatially varying coefficient models. Geographical Analysis, 51(4), 375–402. https://doi.org/10.1111/gean.12189
+18.	Eurostat. (2024). Energy Prices and Costs in Europe – Statistical Report. European Commission. https://ec.europa.eu/eurostat/
+
+## Appendix: Software and Data Sources
+
+### Statistical Computing Environment
+
+- R version: 4.3.2 or later  
+- Development environment: RStudio + Quarto  
+
+### R Packages Used
+
+**Core Data and Modelling:**
+
+- tidyverse (dplyr, tidyr, purrr, tibble, readr, stringr, lubridate)  
+- data.table  
+- duckdb  
+- arrow  
+- knitr, kableExtra  
+
+**Machine Learning:**
+
+- stats (linear models)  
+- mgcv, gratia (GAM models)  
+- xgboost  
+- vip (variable importance)  
+- fastshap (SHAP explanations) 
+- keras
+
+**Visualization:**
+
+- ggplot2  
+- patchwork  
+- gridExtra  
+- scales  
+
+**Spatial Data:**
+
+- sf  
+- tmap  
+
+**Utilities:**
+
+- httr  
+- jsonlite  
+
+### External Data Sources and APIs
+
+- **Tankerkoenig API** – German diesel and gasoline prices  
+- **OpenStreetMap Nominatim** – geocoding of station coordinates  
+- **Eurostat / GADM NUTS-3 shapefiles** – spatial boundaries for Bavaria and NRW  
+- **DuckDB datasets** – harmonised station-level price and metadata warehouse  
+
+### Github repo: 
+
+https://github.com/AnhHoangNamPhan/MBAT-Internship-Project
